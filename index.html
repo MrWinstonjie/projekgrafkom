@@ -1,12 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EDGEHOG ISLAND LABOLATORY Viewer - FPS with Collision & Interaction</title>
+    <title>EDGEHOG ISLAND LABOLATORY - FPS with Jump & Gravity</title>
     <style>
-        body { margin: 0; overflow: hidden; }
-        canvas { display: block; }
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+
         #controls-help {
             position: absolute;
             top: 10px;
@@ -21,6 +29,7 @@
             line-height: 1.6;
             max-width: 250px;
         }
+
         #controls-help h3 {
             margin-top: 0;
             margin-bottom: 8px;
@@ -28,9 +37,11 @@
             border-bottom: 1px solid #555;
             padding-bottom: 5px;
         }
+
         #controls-help p {
             margin: 4px 0;
         }
+
         #controls-help kbd {
             background-color: #333;
             border: 1px solid #555;
@@ -40,9 +51,41 @@
             font-family: monospace;
             font-size: 13px;
         }
+
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            z-index: 200;
+        }
+
+        #instructions {
+            width: 50%;
+            cursor: pointer;
+        }
     </style>
 </head>
+
 <body>
+    <div id="blocker">
+        <div id="instructions">
+            <p style="font-size:36px">Click to play</p>
+            <p>
+                W, A, S, D: Move<br />
+                Shift: Sprint<br />
+                Space: Jump<br />
+                Mouse: Look around
+            </p>
+        </div>
+    </div>
+
     <div id="controls-help">
         <h3>Petunjuk Kontrol</h3>
         <p><kbd>W</kbd> - Maju</p>
@@ -50,8 +93,8 @@
         <p><kbd>S</kbd> - Mundur</p>
         <p><kbd>D</kbd> - Kanan (Strafe)</p>
         <p><kbd>Shift Kiri</kbd> - Sprint</p>
-        <p><kbd>E</kbd> - Interaksi</p>
-        <p><strong>Mouse</strong> - Lihat Sekeliling</p>
+        <p><kbd>Space</kbd> - Lompat</p>
+        <p><strong>Mouse</strong> - Lihat Sekeliling (Klik layar untuk mengaktifkan)</p>
     </div>
 
     <script type="importmap">
@@ -65,44 +108,56 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         let scene, camera, renderer, model, controls;
         const clock = new THREE.Clock();
 
         const keys = {
             W: false, A: false, S: false, D: false,
-            SHIFT_LEFT: false, E: false
+            SHIFT_LEFT: false,
+            SPACE: false // Ditambahkan untuk lompat
         };
 
-        let currentMoveSpeed = 2.15;
-        const sprintMultiplier = 5.5;
-        const eyeHeightFromSurface = 300.8;
-        const initialLookAheadDistance = 0.1;
+        // Konstanta Fisika dan Player
+        const PLAYER_EYE_HEIGHT = 10.5;     // Jarak dari kaki pemain ke kamera. Sesuaikan dengan skala.
+        const PLAYER_COLLISION_HEIGHT = 1.8; // Tinggi total pemain untuk tabrakan kepala.
+        const GRAVITY = 7.0;               // Percepatan gravitasi (unit/s^2). Sesuaikan.
+        const JUMP_IMPULSE = 3.5;          // Kecepatan awal ke atas untuk lompat (unit/s). Sesuaikan.
+        const MAX_STEP_HEIGHT = 0.6;        // Tinggi maksimal pemain bisa naik otomatis. Sesuaikan.
+        const playerRadiusBuffer = 3.5;     // Radius horizontal pemain untuk tabrakan
+        const PLAYER_FEET_RADIUS = playerRadiusBuffer * 0.8; // Untuk offset pengecekan tanah
 
-        let targetSurfaceY = 0;
-        let onTargetObject = false;
+        let player = {
+            position: new THREE.Vector3(),    // Posisi kaki pemain
+            velocity: new THREE.Vector3(),    // Kecepatan saat ini (terutama sumbu Y)
+            isGrounded: false,
+            canJump: true,
+            boundingBox: new THREE.Box3()     // Bounding box pemain
+        };
 
-        const movementRaycaster = new THREE.Raycaster(); // Renamed for clarity
+        const raycaster = new THREE.Raycaster();
         const collidableMeshes = [];
-        const playerRadiusBuffer = 3.5;
         const collidableObjectNames = [
             'Object_13', 'Object_22', 'Object_23', 'Object_14',
-            'Object_15', 'Object_16' // 'Object_18' might be interactable OR collidable, ensure it's not overly restricted
+            'Object_15', 'Object_16', 'Object_18',
+            'Object_6' // PASTIKAN INI NAMA OBJEK PLATFORM/LANTAI UTAMA ANDA
         ];
         const collisionBoundingBoxes = new Map();
 
-        // Interaction
-        const interactableObjectNames = ['Object_17', 'Object_18', 'Object_25'];
-        const interactables = []; // Will store the actual THREE.Object3D instances
-        const interactionRaycaster = new THREE.Raycaster();
-        const interactionDistance = 150; // Max distance player can interact from
-        const animationDuration = 0.5; // Duration of the bob animation in seconds
-        const animationAmplitude = 8; // How high the object bobs
+        const blocker = document.getElementById('blocker');
+        const instructions = document.getElementById('instructions');
+
+        // Helper vectors, dideklarasikan global agar tidak dibuat ulang setiap frame
+        const _worldDirection = new THREE.Vector3();
+        const _movementDirection = new THREE.Vector3();
+        const _forward = new THREE.Vector3();
+        const _right = new THREE.Vector3();
+
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf0f0f0);
+            scene.background = new THREE.Color(0x87CEEB); // Sky blue
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
 
@@ -115,16 +170,27 @@
             renderer.toneMappingExposure = 1.0;
             document.body.appendChild(renderer.domElement);
 
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = false;
-            controls.enablePan = false;
-            controls.enableZoom = false;
-            controls.minDistance = 0.01;
-            controls.maxDistance = 1;
-            controls.minPolarAngle = 0.05;
-            controls.maxPolarAngle = Math.PI - 0.05;
+            controls = new PointerLockControls(camera, document.body);
+            // Tidak menambahkan controls.getObject() ke scene secara langsung,
+            // karena kamera akan mengikuti posisi player.position + PLAYER_EYE_HEIGHT
+
+            instructions.addEventListener('click', function () {
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', function () {
+                instructions.style.display = 'none';
+                blocker.style.display = 'none';
+                document.getElementById('controls-help').style.display = 'block';
+            });
+
+            controls.addEventListener('unlock', function () {
+                blocker.style.display = 'flex';
+                instructions.style.display = '';
+                document.getElementById('controls-help').style.display = 'none';
+            });
+            document.getElementById('controls-help').style.display = 'none';
+
 
             setupLighting();
 
@@ -137,79 +203,55 @@
                         if (child.isMesh) {
                             child.castShadow = true;
                             child.receiveShadow = true;
-
                             if (collidableObjectNames.includes(child.name)) {
                                 collidableMeshes.push(child);
                                 const boundingBox = new THREE.Box3().setFromObject(child);
                                 collisionBoundingBoxes.set(child.name, boundingBox);
-                                // console.log(`Collision bounding box for ${child.name}:`, boundingBox);
-                            }
-
-                            if (interactableObjectNames.includes(child.name)) {
-                                child.userData.isInteractable = true;
-                                child.userData.isAnimating = false;
-                                child.userData.animationStartTime = 0;
-                                child.userData.originalPosition = child.position.clone(); // Store original LOCAL position
-                                interactables.push(child);
-                                console.log(`Found interactable object: ${child.name}`);
-
-                                // If an object is both interactable and collidable, ensure it's in collidableMeshes too.
-                                // For lab tubes, they probably should be collidable too.
-                                if (!collidableMeshes.includes(child)) {
-                                    collidableMeshes.push(child);
-                                    const boundingBox = new THREE.Box3().setFromObject(child);
-                                    collisionBoundingBoxes.set(child.name, boundingBox);
-                                    console.log(`Interactable ${child.name} also added as collidable.`);
-                                }
                             }
                         }
                     });
+                    model.scale.set(0.05, 0.05, 0.05); // Sesuaikan skala model jika perlu
                     scene.add(model);
                     console.log("Model loaded successfully.");
                     if (collidableMeshes.length > 0) {
                         console.log(`Found ${collidableMeshes.length} collidable meshes:`, collidableMeshes.map(m => m.name));
                     } else {
-                        console.warn("No collidable meshes found with the specified names. Collision detection might not work as expected.");
-                    }
-                    if (interactables.length > 0) {
-                        console.log(`Found ${interactables.length} interactable objects:`, interactables.map(m => m.name));
-                    } else {
-                        console.warn("No interactable objects found with the specified names.");
+                        console.warn("No collidable meshes found with the specified names. Ground detection and collision might not work.");
                     }
 
-
-                    const targetObjectName = 'Object_6';
-                    let targetObject = null;
-                    model.traverse((child) => {
-                        if (child.name === targetObjectName) {
-                            targetObject = child;
-                        }
-                    });
+                    const targetObjectName = 'Object_6'; // Objek untuk posisi awal
+                    let targetObject = model.getObjectByName(targetObjectName);
 
                     if (targetObject) {
-                        onTargetObject = true;
+                        console.log(`Found ${targetObjectName} for initial positioning.`);
                         const boundingBox = new THREE.Box3().setFromObject(targetObject);
-                        targetSurfaceY = boundingBox.max.y;
                         const objectWorldPosition = new THREE.Vector3();
                         targetObject.getWorldPosition(objectWorldPosition);
-                        camera.position.set(
+
+                        player.position.set(
                             objectWorldPosition.x,
-                            targetSurfaceY + eyeHeightFromSurface,
+                            boundingBox.max.y, // Kaki pemain di atas permukaan objek
                             objectWorldPosition.z
                         );
+                        player.isGrounded = true;
                     } else {
-                        onTargetObject = false;
-                        camera.position.set(0, eyeHeightFromSurface, 5);
+                        console.warn(`${targetObjectName} not found. Using default player position.`);
+                        player.position.set(0, 10, 5); // Posisi awal default (Y=10 agar tidak tembus lantai jika lantai di Y=0)
+                        player.isGrounded = false; // Mungkin jatuh jika tidak ada apa-apa di bawah
                     }
+                    // Atur posisi kamera berdasarkan kaki pemain + tinggi mata
+                    controls.getObject().position.set(
+                        player.position.x,
+                        player.position.y + PLAYER_EYE_HEIGHT,
+                        player.position.z
+                    );
 
-                    const lookDirection = new THREE.Vector3();
-                    camera.getWorldDirection(lookDirection);
-                    controls.target.copy(camera.position).addScaledVector(lookDirection, initialLookAheadDistance);
-                    controls.update();
+                    console.log(`Initial player feet position:`, player.position);
+                    console.log(`Initial camera position:`, controls.getObject().position);
                     animate();
                 },
                 (xhr) => console.log((xhr.loaded / xhr.total * 100) + '% loaded'),
-                (error) => console.error('An error happened while loading the GLB model:', error)
+                (error) => console.error('Error loading GLB model:', error)
             );
 
             document.addEventListener('keydown', onKeyDown);
@@ -218,23 +260,21 @@
         }
 
         function setupLighting() {
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
-            const mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 4.8);
-            mainDirectionalLight.position.set(30, 40, 25);
+            const mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 3.5);
+            mainDirectionalLight.position.set(40, 50, 30);
             mainDirectionalLight.castShadow = true;
             mainDirectionalLight.shadow.mapSize.width = 2048;
             mainDirectionalLight.shadow.mapSize.height = 2048;
             mainDirectionalLight.shadow.camera.near = 0.5;
-            mainDirectionalLight.shadow.camera.far = 100;
-            mainDirectionalLight.shadow.camera.left = -30;
-            mainDirectionalLight.shadow.camera.right = 30;
-            mainDirectionalLight.shadow.camera.top = 30;
-            mainDirectionalLight.shadow.camera.bottom = -30;
+            mainDirectionalLight.shadow.camera.far = 150;
+            mainDirectionalLight.shadow.camera.left = -60;
+            mainDirectionalLight.shadow.camera.right = 60;
+            mainDirectionalLight.shadow.camera.top = 60;
+            mainDirectionalLight.shadow.camera.bottom = -60;
             mainDirectionalLight.shadow.bias = -0.0005;
             scene.add(mainDirectionalLight);
-            const hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x303030, 0.8);
-            scene.add(hemisphereLight);
         }
 
         function onKeyDown(event) {
@@ -244,12 +284,7 @@
                 case 'KeyS': keys.S = true; break;
                 case 'KeyD': keys.D = true; break;
                 case 'ShiftLeft': keys.SHIFT_LEFT = true; break;
-                case 'KeyE':
-                    if (!keys.E) { // Process only on first press to avoid multiple triggers if key held
-                        handleInteraction();
-                    }
-                    keys.E = true;
-                    break;
+                case 'Space': keys.SPACE = true; break;
             }
         }
 
@@ -260,122 +295,191 @@
                 case 'KeyS': keys.S = false; break;
                 case 'KeyD': keys.D = false; break;
                 case 'ShiftLeft': keys.SHIFT_LEFT = false; break;
-                case 'KeyE': keys.E = false; break;
+                case 'Space': keys.SPACE = false; break;
             }
         }
 
-        function handleInteraction() {
-            if (!model || interactables.length === 0) return;
+        // ... (kode di atas fungsi updatePlayerAndCamera tetap sama) ...
 
-            // Raycast from camera center
-            interactionRaycaster.setFromCamera({ x: 0, y: 0 }, camera);
-            const intersects = interactionRaycaster.intersectObjects(interactables, false); // false: don't check children of interactables themselves
+        function updatePlayerAndCamera(deltaTime) {
+            if (!controls.isLocked) {
+                player.velocity.x = 0;
+                player.velocity.z = 0;
+                return;
+            }
 
-            if (intersects.length > 0) {
-                const intersectedObject = intersects[0].object; // This is the Mesh
-                // We stored userData on the mesh itself if it's in interactableObjectNames
-                if (intersects[0].distance < interactionDistance) {
-                    if (intersectedObject.userData.isInteractable && !intersectedObject.userData.isAnimating) {
-                        intersectedObject.userData.isAnimating = true;
-                        intersectedObject.userData.animationStartTime = clock.getElapsedTime();
-                        console.log(`Interacting with ${intersectedObject.name}`);
-                        // The originalPosition is already stored in userData
+            const cameraReference = controls.getObject();
+            const effectiveMoveSpeed = 8.0;
+            const sprintMultiplier = 1.5;
+
+            const actualSpeed = (keys.SHIFT_LEFT ? sprintMultiplier : 1) * effectiveMoveSpeed * deltaTime;
+
+            // --- Handle Horizontal Movement Input ---
+            cameraReference.getWorldDirection(_forward);
+            _forward.y = 0;
+            _forward.normalize();
+            _right.crossVectors(cameraReference.up, _forward).normalize();
+
+            _movementDirection.set(0, 0, 0);
+            if (keys.W) _movementDirection.add(_forward);
+            if (keys.S) _movementDirection.sub(_forward);
+            if (keys.A) _movementDirection.add(_right); // KOREKSI: Strafe Kiri Standar
+            if (keys.D) _movementDirection.sub(_right); // KOREKSI: Strafe Kanan Standar
+
+
+            // --- Apply Gravity ---
+            if (!player.isGrounded) {
+                player.velocity.y -= GRAVITY * deltaTime;
+            }
+
+            // --- Handle Jumping ---
+            if (keys.SPACE && player.isGrounded && player.canJump) {
+                player.velocity.y = JUMP_IMPULSE;
+                player.isGrounded = false;
+                player.canJump = false;
+            }
+            if (!keys.SPACE) {
+                player.canJump = true;
+            }
+
+            // --- Calculate Intended Horizontal Position Change ---
+            let intendedDeltaX = 0;
+            let intendedDeltaZ = 0;
+            if (_movementDirection.lengthSq() > 0) {
+                _movementDirection.normalize();
+                intendedDeltaX = _movementDirection.x * actualSpeed;
+                intendedDeltaZ = _movementDirection.z * actualSpeed;
+            }
+
+            // --- Vertical Collision and Ground Detection ---
+            const playerBaseY = player.position.y;
+            const groundRayOrigin = new THREE.Vector3(player.position.x, playerBaseY + PLAYER_FEET_RADIUS * 0.5, player.position.z);
+            const groundRayLength = Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS * 1.1;
+
+            raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
+            raycaster.far = groundRayLength;
+            const groundIntersects = raycaster.intersectObjects(collidableMeshes, true);
+
+            player.isGrounded = false;
+
+            if (player.velocity.y <= 0) {
+                if (groundIntersects.length > 0) {
+                    const closestGround = groundIntersects[0];
+                    if (closestGround.distance <= PLAYER_FEET_RADIUS * 1.0 + 0.01) { // Tambah epsilon kecil
+                        player.position.y = closestGround.point.y;
+                        player.velocity.y = 0;
+                        player.isGrounded = true;
                     }
                 }
             }
-        }
 
+            if (!player.isGrounded) {
+                player.position.y += player.velocity.y * deltaTime;
+            }
 
-        function checkCollision(currentPosition, moveDirection, distance) {
-            const checkPoints = [
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(playerRadiusBuffer, 0, 0),
-                new THREE.Vector3(-playerRadiusBuffer, 0, 0),
-                new THREE.Vector3(0, 0, playerRadiusBuffer),
-                new THREE.Vector3(0, 0, -playerRadiusBuffer),
-            ];
-
-            for (let checkPoint of checkPoints) {
-                const rayStart = currentPosition.clone().add(checkPoint);
-                movementRaycaster.set(rayStart, moveDirection);
-                const intersects = movementRaycaster.intersectObjects(collidableMeshes, true);
-                if (intersects.length > 0 && intersects[0].distance < distance + playerRadiusBuffer) {
-                    return true;
+            // --- Head Collision ---
+            if (player.velocity.y > 0) {
+                const headCheckOrigin = player.position.clone().add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT - 0.1, 0));
+                raycaster.set(headCheckOrigin, new THREE.Vector3(0, 1, 0));
+                raycaster.far = player.velocity.y * deltaTime + 0.2;
+                const headIntersects = raycaster.intersectObjects(collidableMeshes, true);
+                if (headIntersects.length > 0) {
+                    player.position.y = headIntersects[0].point.y - PLAYER_COLLISION_HEIGHT;
+                    player.velocity.y = 0;
                 }
             }
 
-            const futurePosition = currentPosition.clone().add(moveDirection.clone().multiplyScalar(distance));
-            const playerBoundingBox = new THREE.Box3().setFromCenterAndSize(
-                futurePosition,
-                new THREE.Vector3(playerRadiusBuffer * 2, eyeHeightFromSurface * 0.8, playerRadiusBuffer * 2) // Reduced height for player BB
+            // --- Horizontal Collision & Step-Up (REVISED LOGIC) ---
+            const tempFuturePlayerPos = player.position.clone();
+            tempFuturePlayerPos.x += intendedDeltaX;
+            tempFuturePlayerPos.z += intendedDeltaZ;
+
+            player.boundingBox.setFromCenterAndSize(
+                new THREE.Vector3(tempFuturePlayerPos.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, tempFuturePlayerPos.z),
+                new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
             );
 
-            for (let mesh of collidableMeshes) {
-                const meshBoundingBox = collisionBoundingBoxes.get(mesh.name);
-                if (meshBoundingBox && playerBoundingBox.intersectsBox(meshBoundingBox)) {
-                    return true;
-                }
-            }
-            return false;
-        }
+            let canMoveHorizontally = true;         // Asumsikan bisa bergerak
+            let collisionResolvedByStepping = false; // Flag jika tabrakan diatasi dengan step-up
 
-        function updateCameraPosition(deltaTime) {
-            const speed = (keys.SHIFT_LEFT ? sprintMultiplier : 1) * currentMoveSpeed;
-            const actualSpeedPerFrame = speed * deltaTime * 60;
+            if (intendedDeltaX !== 0 || intendedDeltaZ !== 0) { // Hanya cek jika ada niat bergerak horizontal
+                for (let mesh of collidableMeshes) {
+                    const meshBoundingBox = collisionBoundingBoxes.get(mesh.name);
+                    if (meshBoundingBox && player.boundingBox.intersectsBox(meshBoundingBox)) {
+                        // Terdeteksi tabrakan. Coba step-up ke mesh ini.
+                        let didStepThisMesh = false;
 
-            const forward = new THREE.Vector3();
-            const right = new THREE.Vector3();
+                        const headClearanceCheckOrigin = player.position.clone();
+                        // Proyeksikan titik cek sedikit ke arah gerakan untuk head clearance
+                        const checkOffsetScale = playerRadiusBuffer * 0.5; // Seberapa jauh ke depan untuk cek head clearance
+                        headClearanceCheckOrigin.x += _movementDirection.x * checkOffsetScale;
+                        headClearanceCheckOrigin.z += _movementDirection.z * checkOffsetScale;
+                        headClearanceCheckOrigin.y += MAX_STEP_HEIGHT + 0.1; // Dari sedikit di atas tinggi step maksimal
 
-            camera.getWorldDirection(forward);
-            forward.y = 0;
-            forward.normalize();
-            right.crossVectors(forward, camera.up).normalize();
+                        raycaster.set(headClearanceCheckOrigin, _movementDirection); // Raycast ke arah gerakan
+                        raycaster.far = playerRadiusBuffer; // Jarak cek yang relevan
+                        const headClearanceIntersects = raycaster.intersectObject(mesh, true);
 
-            const combinedMoveDirection = new THREE.Vector3();
-            if (keys.W) combinedMoveDirection.add(forward);
-            if (keys.S) combinedMoveDirection.sub(forward);
-            if (keys.A) combinedMoveDirection.sub(right);
-            if (keys.D) combinedMoveDirection.add(right);
+                        if (headClearanceIntersects.length === 0) { // Jika ada ruang di atas untuk kepala
+                            const stepSurfaceRayOrigin = new THREE.Vector3(
+                                tempFuturePlayerPos.x, // Cek dari posisi XZ yang dituju
+                                player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS, // Mulai raycast dari atas tinggi step
+                                tempFuturePlayerPos.z
+                            );
+                            raycaster.set(stepSurfaceRayOrigin, new THREE.Vector3(0, -1, 0)); // Raycast ke bawah
+                            raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5; // Jarak cek ke bawah
+                            const stepSurfaceIntersects = raycaster.intersectObject(mesh, true);
 
-            if (combinedMoveDirection.lengthSq() > 0) {
-                combinedMoveDirection.normalize();
-                const intendedDistance = actualSpeedPerFrame;
-                if (!checkCollision(camera.position, combinedMoveDirection, intendedDistance)) {
-                    camera.position.add(combinedMoveDirection.multiplyScalar(intendedDistance));
-                } else {
-                    const reducedDistance = intendedDistance * 0.1;
-                    if (!checkCollision(camera.position, combinedMoveDirection, reducedDistance)) {
-                        camera.position.add(combinedMoveDirection.multiplyScalar(reducedDistance));
+                            if (stepSurfaceIntersects.length > 0) {
+                                const stepSurfaceY = stepSurfaceIntersects[0].point.y;
+                                // Cek apakah permukaan pijakan valid (di atas atau sama dengan posisi kaki saat ini, dan dalam jangkauan MAX_STEP_HEIGHT)
+                                const yDifference = stepSurfaceY - player.position.y;
+                                if (yDifference >= -0.01 && yDifference <= MAX_STEP_HEIGHT) { // Izinkan toleransi kecil untuk permukaan datar
+                                    player.position.x = tempFuturePlayerPos.x; // Pindah ke XZ yang dituju
+                                    player.position.z = tempFuturePlayerPos.z;
+                                    player.position.y = stepSurfaceY;      // Naikkan ke permukaan pijakan
+                                    player.isGrounded = true;
+                                    player.velocity.y = 0;
+                                    collisionResolvedByStepping = true; // Tabrakan diatasi dengan step-up
+                                    didStepThisMesh = true;
+                                    // console.log("Stepped up onto:", mesh.name, "to Y:", stepSurfaceY.toFixed(2));
+                                    break; // Keluar dari loop collidableMeshes karena tabrakan sudah diatasi
+                                }
+                            }
+                        }
+
+                        if (!didStepThisMesh) {
+                            // Tabrakan terjadi, dan tidak bisa step-up ke mesh INI.
+                            // Ini berarti ini adalah dinding atau halangan yang terlalu tinggi.
+                            canMoveHorizontally = false;
+                            // console.log("Wall collision with:", mesh.name, ". Preventing horizontal move.");
+                            break; // Keluar dari loop collidableMeshes, gerakan diblokir.
+                        }
                     }
                 }
             }
 
-            if (onTargetObject) {
-                camera.position.y = targetSurfaceY + eyeHeightFromSurface;
+
+            // --- Final Application of Movement ---
+            if (collisionResolvedByStepping) {
+                // Posisi sudah diperbarui selama step-up yang berhasil.
+            } else if (canMoveHorizontally) {
+                // Tidak ada tabrakan yang menghalangi, atau tidak ada tabrakan sama sekali.
+                player.position.x = tempFuturePlayerPos.x;
+                player.position.z = tempFuturePlayerPos.z;
+            } else {
+                // Gerakan diblokir oleh tabrakan yang tidak bisa di-step-up.
+                // console.log("Final decision: No horizontal movement this frame due to wall.");
             }
 
-            const lookDirection = new THREE.Vector3();
-            camera.getWorldDirection(lookDirection);
-            controls.target.copy(camera.position).addScaledVector(lookDirection, initialLookAheadDistance);
+            // --- Final Camera Update ---
+            cameraReference.position.x = player.position.x;
+            cameraReference.position.y = player.position.y + PLAYER_EYE_HEIGHT;
+            cameraReference.position.z = player.position.z;
         }
 
-        function updateAnimations(currentTime) {
-            for (const obj of interactables) {
-                if (obj.userData.isAnimating) {
-                    const elapsedTime = currentTime - obj.userData.animationStartTime;
-                    if (elapsedTime < animationDuration) {
-                        const animationProgress = elapsedTime / animationDuration; // 0 to 1
-                        // Simple bobbing: up and then back down using a sine wave
-                        // Math.PI makes it go up (0 to 1) and back down (1 to 0) for sin argument 0 to PI
-                        const bobOffset = Math.sin(animationProgress * Math.PI) * animationAmplitude;
-                        obj.position.y = obj.userData.originalPosition.y + bobOffset;
-                    } else {
-                        obj.userData.isAnimating = false;
-                        obj.position.copy(obj.userData.originalPosition); // Reset to original local position
-                    }
-                }
-            }
-        }
+        // ... (sisa kode seperti onWindowResize, animate, init tetap sama) ...
+
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -385,17 +489,13 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            const deltaTime = clock.getDelta();
-            const currentTime = clock.getElapsedTime(); // Get current time for animations
-
-            updateCameraPosition(deltaTime);
-            updateAnimations(currentTime); // Update interactable object animations
-
-            controls.update();
-            renderer.render(scene, camera);QA
+            const deltaTime = Math.min(0.05, clock.getDelta()); // Batasi deltaTime untuk mencegah bug fisika saat frame drop
+            updatePlayerAndCamera(deltaTime);
+            renderer.render(scene, camera);
         }
 
         init();
     </script>
 </body>
+
 </html>
