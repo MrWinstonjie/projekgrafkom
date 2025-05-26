@@ -144,11 +144,11 @@
         const collidableMeshes = [];
         const collidableObjectNames = [
             'Object_13108', 'Object_13105',
-            'Object_22', 'Object_23', 'Object_14',
+            'Object_22', 'Object_23', 'Object_14', // 'Object_23' is the interactive parent/group for the paper
             'Object_15', 'Object_16', 'Object_18',
             'Object_6', 'Object_20', 'Object_25', 'Object_24'
         ];
-        const interactiveObjectNames = ['Object_13108', 'Object_23', 'Object_18'];
+        const interactiveObjectNames = ['Object_13108', 'Object_23', 'Object_18', 'Object_23025'];
         const collisionBoundingBoxes = new Map();
 
         const blocker = document.getElementById('blocker');
@@ -159,15 +159,10 @@
         const _forward = new THREE.Vector3();
         const _right = new THREE.Vector3();
 
-        let tvScreenMesh, paperObject, steamObject, steamTriggerObject;
+        let tvScreenMesh, steamObject;
         let isTVOn = false;
-        let originalTVMaterial, staticTVMaterial; // Tambahkan staticTVMaterial
-        let staticTexture; // Untuk menyimpan tekstur static
-
-        let isPaperAnimating = false;
-        let paperAnimationTime = 0;
-        const PAPER_ANIMATION_DURATION = 0.5;
-        let originalPaperRotation;
+        let originalTVMaterial, staticTVMaterial;
+        let staticTexture;
 
         let isSteamActive = false;
         let steamAnimationTime = 0;
@@ -176,6 +171,17 @@
         let originalSteamPosition;
         let originalSteamOpacity;
 
+        // Paper Animation Variables
+        let paperMesh; // This will hold the 'Object_23045' mesh
+        let paperPrintTexture;
+        let originalPaperMaterial; // Store original material
+        let paperPrintMaterial; // Material with kertasprint.jpeg
+        let isPaperTextureVisible = false; // Toggle state
+        let paperAnimationActive = false;
+        let paperAnimationTime = 0;
+        const PAPER_ANIMATION_DURATION = 1.0; // 1 second animation
+        let paperTargetOpacity = 0;
+        let paperCurrentOpacity = 0;
 
         function init() {
             scene = new THREE.Scene();
@@ -204,35 +210,61 @@
             document.getElementById('controls-help').style.display = 'none';
             setupLighting();
 
-            // Load Tekstur Static Screen
             const textureLoader = new THREE.TextureLoader();
-            staticTexture = textureLoader.load('television.jpeg', // GANTI DENGAN NAMA FILE TEKSTUR ANDA
+            staticTexture = textureLoader.load('television.jpeg',
                 (texture) => {
                     texture.wrapS = THREE.RepeatWrapping;
                     texture.wrapT = THREE.RepeatWrapping;
-                    console.log("Static screen texture loaded successfully.");
-                    // Buat material static setelah tekstur dimuat
                     staticTVMaterial = new THREE.MeshStandardMaterial({
                         map: staticTexture,
-                        emissiveMap: staticTexture, // Bisa juga pakai emissive agar terlihat menyala
-                        emissive: 0xffffff,       // Warna emissive (putih agar tekstur terlihat jelas)
-                        emissiveIntensity: 0.5    // Intensitas nyala
+                        emissiveMap: staticTexture,
+                        emissive: 0xffffff,
+                        emissiveIntensity: 0.5
                     });
                 },
                 undefined,
                 (error) => {
                     console.error("Error loading static screen texture:", error);
-                    // Fallback jika tekstur gagal dimuat
                     staticTVMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, emissive: 0x333333, emissiveIntensity: 1 });
                 }
             );
 
+            // Load paper print texture
+            paperPrintTexture = textureLoader.load('kertasprint.jpeg', 
+                (texture) => {
+                    console.log("Texture 'kertasprint.jpeg' loaded successfully.");
+                    texture.wrapS = THREE.ClampToEdgeWrapping;
+                    texture.wrapT = THREE.ClampToEdgeWrapping; 
+                    
+                    // Create material with the loaded texture (transparent for animation)
+                    paperPrintMaterial = new THREE.MeshStandardMaterial({
+                        map: paperPrintTexture,
+                        roughness: 0.8,
+                        metalness: 0.1,
+                        transparent: true,
+                        opacity: 0 // Start invisible
+                    });
+
+                    console.log("Paper print material created with 'kertasprint.jpeg'.");
+                },
+                undefined,
+                (error) => {
+                    console.error("ERROR loading 'kertasprint.jpeg':", error);
+                    // Create fallback material
+                    paperPrintMaterial = new THREE.MeshStandardMaterial({
+                        color: 0xffffff, 
+                        roughness: 0.8,
+                        metalness: 0.1,
+                        transparent: true,
+                        opacity: 0
+                    });
+                }
+            );
 
             const loader = new GLTFLoader();
             loader.load('EDGEHOG ISLAND LABOLATORY.glb', (gltf) => {
                 model = gltf.scene;
                 model.traverse((child) => {
-                    // console.log(`Object Name: ${child.name}, Type: ${child.type}, UUID: ${child.uuid}`);
                     if (child.isMesh) {
                         child.castShadow = true;
                         child.receiveShadow = true;
@@ -240,21 +272,26 @@
                             collidableMeshes.push(child);
                             collisionBoundingBoxes.set(child.name, new THREE.Box3().setFromObject(child));
                         }
+
+                        if (child.name === 'Object_23045') { 
+                            paperMesh = child;
+                            // Store the original material
+                            originalPaperMaterial = paperMesh.material ? paperMesh.material.clone() : new THREE.MeshStandardMaterial({color: 0xffffff, roughness: 0.8});
+                            
+                            console.log("SUCCESS: Paper mesh 'Object_23045' found.");
+                        }
                     }
                 });
+
+                if (!paperMesh) {
+                    console.error("CRITICAL ERROR: Paper mesh 'Object_23045' NOT FOUND. Paper toggle will not work.");
+                }
 
                 tvScreenMesh = model.getObjectByName('Object_13105');
                 if (tvScreenMesh && tvScreenMesh.isMesh && tvScreenMesh.material) {
                     originalTVMaterial = tvScreenMesh.material.clone();
-                    console.log("TV Screen Mesh (Object_13105) found and material stored.");
-                } else {
-                    console.error("CRITICAL: TV Screen Mesh (Object_13105) not found or has no material. TV interaction will not work correctly.");
                 }
 
-                paperObject = model.getObjectByName('Object_23');
-                if (paperObject && paperObject.isMesh) {
-                    originalPaperRotation = paperObject.rotation.clone();
-                }
                 steamObject = model.getObjectByName('Object_17');
                 if (steamObject && steamObject.isMesh) {
                     originalSteamPosition = steamObject.position.clone();
@@ -264,7 +301,6 @@
                         steamObject.visible = false;
                     }
                 }
-                steamTriggerObject = model.getObjectByName('Object_18');
 
                 model.scale.set(0.05, 0.05, 0.05);
                 scene.add(model);
@@ -285,7 +321,7 @@
                     new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
                 );
                 animate();
-            }, (xhr) => console.log((xhr.loaded / xhr.total * 100) + '% loaded'), (error) => console.error(error));
+            }, (xhr) => console.log((xhr.loaded / xhr.total * 100) + '% loaded'), (error) => console.error("GLTF Loading Error:", error));
 
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
@@ -318,6 +354,55 @@
             if (keys.hasOwnProperty(key)) keys[key] = false;
         }
 
+        function startPaperAnimation(showTexture) {
+            if (!paperAnimationActive) {
+                paperAnimationActive = true;
+                paperAnimationTime = 0;
+                paperTargetOpacity = showTexture ? 1.0 : 0.0;
+                paperCurrentOpacity = showTexture ? 0.0 : 1.0;
+                
+                // Set the paper to use the print material immediately
+                if (showTexture && paperMesh && paperPrintMaterial) {
+                    paperMesh.material = paperPrintMaterial;
+                    paperPrintMaterial.opacity = paperCurrentOpacity;
+                }
+                
+                console.log(`Paper animation started: ${showTexture ? 'SHOWING' : 'HIDING'} texture`);
+            }
+        }
+
+        function updatePaperAnimation(deltaTime) {
+            if (paperAnimationActive) {
+                paperAnimationTime += deltaTime;
+                const progress = Math.min(paperAnimationTime / PAPER_ANIMATION_DURATION, 1.0);
+                
+                // Smooth easing function (ease-in-out)
+                const easeProgress = progress < 0.5 
+                    ? 2 * progress * progress 
+                    : -1 + (4 - 2 * progress) * progress;
+                
+                // Interpolate opacity
+                paperCurrentOpacity = paperCurrentOpacity + (paperTargetOpacity - paperCurrentOpacity) * easeProgress;
+                
+                if (paperMesh && paperPrintMaterial && paperMesh.material === paperPrintMaterial) {
+                    paperPrintMaterial.opacity = paperCurrentOpacity;
+                }
+                
+                // Animation finished
+                if (progress >= 1.0) {
+                    paperAnimationActive = false;
+                    
+                    // If we're hiding the texture and animation is complete, switch back to original material
+                    if (paperTargetOpacity === 0 && paperMesh && originalPaperMaterial) {
+                        paperMesh.material = originalPaperMaterial;
+                        console.log("Paper animation complete: texture HIDDEN, switched back to original material");
+                    } else if (paperTargetOpacity === 1.0) {
+                        console.log("Paper animation complete: texture FULLY VISIBLE");
+                    }
+                }
+            }
+        }
+
         function handleInteraction() {
             interactionRaycaster.setFromCamera({ x: 0, y: 0 }, camera);
             const interactableSceneObjects = [];
@@ -328,29 +413,37 @@
             const intersects = interactionRaycaster.intersectObjects(interactableSceneObjects, true);
 
             if (intersects.length > 0 && intersects[0].distance < INTERACTION_DISTANCE) {
-                const intersectedObject = intersects[0].object;
-                let interactiveObjectName = intersectedObject.name;
-                let current = intersectedObject;
+                const intersectedRawObject = intersects[0].object;
+                let interactiveObjectName = intersectedRawObject.name;
+                let current = intersectedRawObject;
+                
                 while (current && !interactiveObjectNames.includes(current.name)) {
                     current = current.parent;
                 }
                 if (current) {
                     interactiveObjectName = current.name;
+                } else {
+                    return; // Not an object we care about for top-level interaction
                 }
 
-                console.log("Interacting with:", interactiveObjectName);
-                if (interactiveObjectName === 'Object_13108' && tvScreenMesh && originalTVMaterial && staticTVMaterial) { // Pastikan staticTVMaterial sudah ada
+                if (interactiveObjectName === 'Object_13108' && tvScreenMesh && originalTVMaterial && staticTVMaterial) {
                     isTVOn = !isTVOn;
-                    if (isTVOn) {
-                        tvScreenMesh.material = staticTVMaterial;
-                        console.log("TV ON - Static Screen");
+                    tvScreenMesh.material = isTVOn ? staticTVMaterial : originalTVMaterial;
+                    console.log("TV toggled:", isTVOn ? "ON" : "OFF");
+                } else if (interactiveObjectName === 'Object_23' || interactiveObjectName === 'Object_23025') { // Interacting with the paper's designated interactive parent/group OR Object_23025
+                    if (paperMesh && originalPaperMaterial && paperPrintMaterial && !paperAnimationActive) {
+                        // Toggle paper texture visibility with animation
+                        isPaperTextureVisible = !isPaperTextureVisible;
+                        startPaperAnimation(isPaperTextureVisible);
+                        
+                        if (interactiveObjectName === 'Object_23025') {
+                            console.log("Object_23025 interacted - animating Object_23045 with kertasprint.jpeg");
+                        }
+                    } else if (paperAnimationActive) {
+                        console.log("Paper animation in progress, please wait...");
                     } else {
-                        tvScreenMesh.material = originalTVMaterial;
-                        console.log("TV OFF");
+                        console.error("Paper Toggle: ERROR - paperMesh or materials not ready for interaction.");
                     }
-                } else if (interactiveObjectName === 'Object_23' && paperObject && !isPaperAnimating) {
-                    isPaperAnimating = true;
-                    paperAnimationTime = 0;
                 } else if (interactiveObjectName === 'Object_18' && steamObject) {
                     isSteamActive = !isSteamActive;
                     if (isSteamActive) {
@@ -358,132 +451,120 @@
                         steamObject.position.copy(originalSteamPosition);
                         if (steamObject.material) steamObject.material.opacity = originalSteamOpacity;
                         steamObject.visible = true;
-                        console.log("Steam Activated");
+                        console.log("Steam activated");
                     } else {
                         steamObject.visible = false;
-                        console.log("Steam Deactivated");
+                        console.log("Steam deactivated");
                     }
                 }
             }
         }
 
         function updatePlayerAndCamera(deltaTime) {
-            if (!controls.isLocked) {
-                player.velocity.x = 0;
-                player.velocity.z = 0;
-                return;
-            }
-            // --- Player Movement Logic (Unchanged) ---
-            const camRef = controls.getObject();
-            const speed = (keys.SHIFT_LEFT ? 1.5 : 1) * 8.0 * deltaTime;
-            camRef.getWorldDirection(_forward);
-            _forward.y = 0; _forward.normalize();
-            _right.crossVectors(camRef.up, _forward).normalize();
-            _movementDirection.set(0, 0, 0);
-            if (keys.W) _movementDirection.add(_forward);
-            if (keys.S) _movementDirection.sub(_forward);
-            if (keys.A) _movementDirection.add(_right);
-            if (keys.D) _movementDirection.sub(_right);
+            // --- Player Movement Logic ---
+            if (controls.isLocked) {
+                const camRef = controls.getObject();
+                const speed = (keys.SHIFT_LEFT ? 1.5 : 1) * 8.0 * deltaTime;
+                camRef.getWorldDirection(_forward);
+                _forward.y = 0; _forward.normalize();
+                _right.crossVectors(camRef.up, _forward).normalize();
+                _movementDirection.set(0, 0, 0);
+                if (keys.W) _movementDirection.add(_forward);
+                if (keys.S) _movementDirection.sub(_forward);
+                if (keys.A) _movementDirection.add(_right);
+                if (keys.D) _movementDirection.sub(_right);
 
-            if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime;
-            if (keys.SPACE && player.isGrounded && player.canJump) {
-                player.velocity.y = JUMP_IMPULSE;
-                player.isGrounded = false;
-                player.canJump = false;
-            }
-            if (!keys.SPACE) player.canJump = true;
-
-            let dX = 0, dZ = 0;
-            if (_movementDirection.lengthSq() > 0) {
-                _movementDirection.normalize();
-                dX = _movementDirection.x * speed;
-                dZ = _movementDirection.z * speed;
-            }
-
-            const groundRayOrigin = new THREE.Vector3(player.position.x, player.position.y + PLAYER_FEET_RADIUS * 0.5, player.position.z);
-            raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
-            raycaster.far = Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS * 1.1;
-            const groundHits = raycaster.intersectObjects(collidableMeshes, true);
-            player.isGrounded = false;
-            if (player.velocity.y <= 0 && groundHits.length > 0 && groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01) {
-                player.position.y = groundHits[0].point.y;
-                player.velocity.y = 0;
-                player.isGrounded = true;
-            }
-            if (!player.isGrounded) player.position.y += player.velocity.y * deltaTime;
-
-            if (player.velocity.y > 0) {
-                const headOrigin = player.position.clone().add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT - 0.1, 0));
-                raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
-                raycaster.far = player.velocity.y * deltaTime + 0.2;
-                const headHits = raycaster.intersectObjects(collidableMeshes, true);
-                if (headHits.length > 0) {
-                    player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT;
-                    player.velocity.y = 0;
+                if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime;
+                if (keys.SPACE && player.isGrounded && player.canJump) {
+                    player.velocity.y = JUMP_IMPULSE;
+                    player.isGrounded = false;
+                    player.canJump = false;
                 }
-            }
+                if (!keys.SPACE) player.canJump = true;
 
-            const tempPos = player.position.clone();
-            tempPos.x += dX; tempPos.z += dZ;
-            player.boundingBox.setFromCenterAndSize(
-                new THREE.Vector3(tempPos.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, tempPos.z),
-                new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
-            );
-            let canMoveH = true; let stepped = false;
-            if (dX !== 0 || dZ !== 0) {
-                for (const mesh of collidableMeshes) {
-                    const box = collisionBoundingBoxes.get(mesh.name);
-                    if (box && !box.isEmpty() && player.boundingBox.intersectsBox(box)) {
-                        let didStep = false;
-                        const headClearOrigin = player.position.clone();
-                        headClearOrigin.x += _movementDirection.x * playerRadiusBuffer * 0.5;
-                        headClearOrigin.z += _movementDirection.z * playerRadiusBuffer * 0.5;
-                        headClearOrigin.y += MAX_STEP_HEIGHT + 0.1;
-                        raycaster.set(headClearOrigin, _movementDirection);
-                        raycaster.far = playerRadiusBuffer;
-                        if (raycaster.intersectObject(mesh, true).length === 0) {
-                            const stepSurfOrigin = new THREE.Vector3(tempPos.x, player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS, tempPos.z);
-                            raycaster.set(stepSurfOrigin, new THREE.Vector3(0, -1, 0));
-                            raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
-                            const stepHits = raycaster.intersectObject(mesh, true);
-                            if (stepHits.length > 0) {
-                                const yDiff = stepHits[0].point.y - player.position.y;
-                                if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) {
-                                    player.position.set(tempPos.x, stepHits[0].point.y, tempPos.z);
-                                    player.isGrounded = true; player.velocity.y = 0;
-                                    stepped = true; didStep = true; break;
-                                }
-                            }
-                        }
-                        if (!didStep) { canMoveH = false; break; }
+                let dX = 0, dZ = 0;
+                if (_movementDirection.lengthSq() > 0) {
+                    _movementDirection.normalize();
+                    dX = _movementDirection.x * speed;
+                    dZ = _movementDirection.z * speed;
+                }
+
+                const groundRayOrigin = new THREE.Vector3(player.position.x, player.position.y + PLAYER_FEET_RADIUS * 0.5, player.position.z);
+                raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
+                raycaster.far = Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS * 1.1;
+                const groundHits = raycaster.intersectObjects(collidableMeshes, true);
+                player.isGrounded = false;
+                if (player.velocity.y <= 0 && groundHits.length > 0 && groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01) {
+                    player.position.y = groundHits[0].point.y;
+                    player.velocity.y = 0;
+                    player.isGrounded = true;
+                }
+                if (!player.isGrounded) player.position.y += player.velocity.y * deltaTime;
+
+                if (player.velocity.y > 0) { 
+                    const headOrigin = player.position.clone().add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT - 0.1, 0));
+                    raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
+                    raycaster.far = player.velocity.y * deltaTime + 0.2;
+                    const headHits = raycaster.intersectObjects(collidableMeshes, true);
+                    if (headHits.length > 0) {
+                        player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT;
+                        player.velocity.y = 0;
                     }
                 }
+
+                const tempPos = player.position.clone();
+                tempPos.x += dX; tempPos.z += dZ;
+                player.boundingBox.setFromCenterAndSize(
+                    new THREE.Vector3(tempPos.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, tempPos.z),
+                    new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
+                );
+                let canMoveH = true; let stepped = false;
+                if (dX !== 0 || dZ !== 0) {
+                    for (const mesh of collidableMeshes) {
+                        const box = collisionBoundingBoxes.get(mesh.name);
+                        if (box && !box.isEmpty() && player.boundingBox.intersectsBox(box)) {
+                            let didStep = false;
+                            const headClearOrigin = player.position.clone();
+                            headClearOrigin.x += _movementDirection.x * playerRadiusBuffer * 0.5;
+                            headClearOrigin.z += _movementDirection.z * playerRadiusBuffer * 0.5;
+                            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1; 
+                            raycaster.set(headClearOrigin, _movementDirection);
+                            raycaster.far = playerRadiusBuffer;
+                            if (raycaster.intersectObject(mesh, true).length === 0) { 
+                                const stepSurfOrigin = new THREE.Vector3(tempPos.x, player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS, tempPos.z);
+                                raycaster.set(stepSurfOrigin, new THREE.Vector3(0, -1, 0)); 
+                                raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
+                                const stepHits = raycaster.intersectObject(mesh, true);
+                                if (stepHits.length > 0) {
+                                    const yDiff = stepHits[0].point.y - player.position.y;
+                                    if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) {
+                                        player.position.set(tempPos.x, stepHits[0].point.y, tempPos.z);
+                                        player.isGrounded = true; player.velocity.y = 0;
+                                        stepped = true; didStep = true; break;
+                                    }
+                                }
+                            }
+                            if (!didStep) { canMoveH = false; break; }
+                        }
+                    }
+                }
+                if (!stepped && canMoveH) player.position.set(tempPos.x, player.position.y, tempPos.z);
+                camRef.position.set(player.position.x, player.position.y + PLAYER_EYE_HEIGHT, player.position.z);
+            } else { // Controls not locked
+                 player.velocity.x = 0;
+                 player.velocity.z = 0;
             }
-            if (!stepped && canMoveH) player.position.set(tempPos.x, player.position.y, tempPos.z);
-            camRef.position.set(player.position.x, player.position.y + PLAYER_EYE_HEIGHT, player.position.z);
             // --- End Player Movement Logic ---
 
-
-            // Animasi Interaktif
-            if (isTVOn && staticTexture && staticTVMaterial === tvScreenMesh.material) { // Animasikan offset hanya jika TV menyala DENGAN material static
-                staticTexture.offset.x += Math.random() * 0.1 - 0.05; // Gerakan acak kecil
+            // TV Static Animation
+            if (isTVOn && staticTexture && tvScreenMesh && staticTVMaterial === tvScreenMesh.material) {
+                staticTexture.offset.x += Math.random() * 0.1 - 0.05;
                 staticTexture.offset.y += Math.random() * 0.1 - 0.05;
-                // Pastikan offset tetap dalam rentang 0-1 agar repeat wrapping bekerja
                 staticTexture.offset.x = (staticTexture.offset.x % 1 + 1) % 1;
                 staticTexture.offset.y = (staticTexture.offset.y % 1 + 1) % 1;
             }
 
-
-            if (isPaperAnimating && paperObject) {
-                paperAnimationTime += deltaTime;
-                const progress = paperAnimationTime / PAPER_ANIMATION_DURATION;
-                paperObject.rotation.z = originalPaperRotation.z + Math.sin(progress * Math.PI * 4) * 0.15;
-                if (paperAnimationTime >= PAPER_ANIMATION_DURATION) {
-                    isPaperAnimating = false;
-                    paperObject.rotation.copy(originalPaperRotation);
-                }
-            }
-
+            // Steam Animation
             if (isSteamActive && steamObject && originalSteamPosition && steamObject.material) {
                 steamAnimationTime += deltaTime;
                 let loopProgress = (steamAnimationTime % STEAM_LOOP_DURATION) / STEAM_LOOP_DURATION;
@@ -494,6 +575,9 @@
                 );
                 steamObject.material.opacity = originalSteamOpacity * (1 - loopProgress);
             }
+
+            // Paper Animation Update
+            updatePaperAnimation(deltaTime);
         }
 
         function onWindowResize() {
