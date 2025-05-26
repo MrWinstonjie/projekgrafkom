@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EDGEHOG ISLAND LABOLATORY - FPS with Jump & Gravity</title>
+    <title>EDGEHOG ISLAND LABOLATORY - FPS with Jump & Gravity & Interaction</title>
     <style>
         body {
             margin: 0;
@@ -81,6 +81,7 @@
                 W, A, S, D: Move<br />
                 Shift: Sprint<br />
                 Space: Jump<br />
+                E: Interact<br />
                 Mouse: Look around
             </p>
         </div>
@@ -94,6 +95,7 @@
         <p><kbd>D</kbd> - Kanan (Strafe)</p>
         <p><kbd>Shift Kiri</kbd> - Sprint</p>
         <p><kbd>Space</kbd> - Lompat</p>
+        <p><kbd>E</kbd> - Interaksi</p>
         <p><strong>Mouse</strong> - Lihat Sekeliling (Klik layar untuk mengaktifkan)</p>
     </div>
 
@@ -116,51 +118,69 @@
         const keys = {
             W: false, A: false, S: false, D: false,
             SHIFT_LEFT: false,
-            SPACE: false // Ditambahkan untuk lompat
+            SPACE: false,
+            E: false
         };
 
-        // Konstanta Fisika dan Player
-        const PLAYER_EYE_HEIGHT = 10.5;     // Jarak dari kaki pemain ke kamera. Sesuaikan dengan skala.
-        const PLAYER_COLLISION_HEIGHT = 1.8; // Tinggi total pemain untuk tabrakan kepala.
-        const GRAVITY = 7.0;               // Percepatan gravitasi (unit/s^2). Sesuaikan.
-        const JUMP_IMPULSE = 3.5;          // Kecepatan awal ke atas untuk lompat (unit/s). Sesuaikan.
-        const MAX_STEP_HEIGHT = 0.6;        // Tinggi maksimal pemain bisa naik otomatis. Sesuaikan.
-        const playerRadiusBuffer = 3.5;     // Radius horizontal pemain untuk tabrakan
-        const PLAYER_FEET_RADIUS = playerRadiusBuffer * 0.8; // Untuk offset pengecekan tanah
+        const PLAYER_EYE_HEIGHT = 10.5;
+        const PLAYER_COLLISION_HEIGHT = 1.8;
+        const GRAVITY = 5.0;
+        const JUMP_IMPULSE = 3.5;
+        const MAX_STEP_HEIGHT = 0.6;
+        const playerRadiusBuffer = 4.0;
+        const PLAYER_FEET_RADIUS = playerRadiusBuffer * 0.8;
+        const INTERACTION_DISTANCE = 15.0;
 
         let player = {
-            position: new THREE.Vector3(),    // Posisi kaki pemain
-            velocity: new THREE.Vector3(),    // Kecepatan saat ini (terutama sumbu Y)
+            position: new THREE.Vector3(),
+            velocity: new THREE.Vector3(),
             isGrounded: false,
             canJump: true,
-            boundingBox: new THREE.Box3()     // Bounding box pemain
+            boundingBox: new THREE.Box3()
         };
 
         const raycaster = new THREE.Raycaster();
+        const interactionRaycaster = new THREE.Raycaster();
         const collidableMeshes = [];
         const collidableObjectNames = [
-            'Object_13', 'Object_22', 'Object_23', 'Object_14',
+            'Object_13108', 'Object_13105',
+            'Object_22', 'Object_23', 'Object_14',
             'Object_15', 'Object_16', 'Object_18',
-            'Object_6' // PASTIKAN INI NAMA OBJEK PLATFORM/LANTAI UTAMA ANDA
+            'Object_6', 'Object_20', 'Object_25', 'Object_24'
         ];
+        const interactiveObjectNames = ['Object_13108', 'Object_23', 'Object_18'];
         const collisionBoundingBoxes = new Map();
 
         const blocker = document.getElementById('blocker');
         const instructions = document.getElementById('instructions');
 
-        // Helper vectors, dideklarasikan global agar tidak dibuat ulang setiap frame
         const _worldDirection = new THREE.Vector3();
         const _movementDirection = new THREE.Vector3();
         const _forward = new THREE.Vector3();
         const _right = new THREE.Vector3();
 
+        let tvScreenMesh, paperObject, steamObject, steamTriggerObject;
+        let isTVOn = false;
+        let originalTVMaterial, staticTVMaterial; // Tambahkan staticTVMaterial
+        let staticTexture; // Untuk menyimpan tekstur static
+
+        let isPaperAnimating = false;
+        let paperAnimationTime = 0;
+        const PAPER_ANIMATION_DURATION = 0.5;
+        let originalPaperRotation;
+
+        let isSteamActive = false;
+        let steamAnimationTime = 0;
+        const STEAM_LOOP_DURATION = 2.0;
+        const STEAM_MAX_HEIGHT_OFFSET = 10.0;
+        let originalSteamPosition;
+        let originalSteamOpacity;
+
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB); // Sky blue
-
+            scene.background = new THREE.Color(0x87CEEB);
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
-
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
@@ -169,90 +189,103 @@
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.0;
             document.body.appendChild(renderer.domElement);
-
             controls = new PointerLockControls(camera, document.body);
-            // Tidak menambahkan controls.getObject() ke scene secara langsung,
-            // karena kamera akan mengikuti posisi player.position + PLAYER_EYE_HEIGHT
-
-            instructions.addEventListener('click', function () {
-                controls.lock();
-            });
-
-            controls.addEventListener('lock', function () {
+            instructions.addEventListener('click', () => controls.lock());
+            controls.addEventListener('lock', () => {
                 instructions.style.display = 'none';
                 blocker.style.display = 'none';
                 document.getElementById('controls-help').style.display = 'block';
             });
-
-            controls.addEventListener('unlock', function () {
+            controls.addEventListener('unlock', () => {
                 blocker.style.display = 'flex';
                 instructions.style.display = '';
                 document.getElementById('controls-help').style.display = 'none';
             });
             document.getElementById('controls-help').style.display = 'none';
-
-
             setupLighting();
 
-            const loader = new GLTFLoader();
-            loader.load(
-                'EDGEHOG ISLAND LABOLATORY.glb',
-                function (gltf) {
-                    model = gltf.scene;
-                    model.traverse((child) => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                            if (collidableObjectNames.includes(child.name)) {
-                                collidableMeshes.push(child);
-                                const boundingBox = new THREE.Box3().setFromObject(child);
-                                collisionBoundingBoxes.set(child.name, boundingBox);
-                            }
-                        }
+            // Load Tekstur Static Screen
+            const textureLoader = new THREE.TextureLoader();
+            staticTexture = textureLoader.load('television.jpeg', // GANTI DENGAN NAMA FILE TEKSTUR ANDA
+                (texture) => {
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    console.log("Static screen texture loaded successfully.");
+                    // Buat material static setelah tekstur dimuat
+                    staticTVMaterial = new THREE.MeshStandardMaterial({
+                        map: staticTexture,
+                        emissiveMap: staticTexture, // Bisa juga pakai emissive agar terlihat menyala
+                        emissive: 0xffffff,       // Warna emissive (putih agar tekstur terlihat jelas)
+                        emissiveIntensity: 0.5    // Intensitas nyala
                     });
-                    model.scale.set(0.05, 0.05, 0.05); // Sesuaikan skala model jika perlu
-                    scene.add(model);
-                    console.log("Model loaded successfully.");
-                    if (collidableMeshes.length > 0) {
-                        console.log(`Found ${collidableMeshes.length} collidable meshes:`, collidableMeshes.map(m => m.name));
-                    } else {
-                        console.warn("No collidable meshes found with the specified names. Ground detection and collision might not work.");
-                    }
-
-                    const targetObjectName = 'Object_6'; // Objek untuk posisi awal
-                    let targetObject = model.getObjectByName(targetObjectName);
-
-                    if (targetObject) {
-                        console.log(`Found ${targetObjectName} for initial positioning.`);
-                        const boundingBox = new THREE.Box3().setFromObject(targetObject);
-                        const objectWorldPosition = new THREE.Vector3();
-                        targetObject.getWorldPosition(objectWorldPosition);
-
-                        player.position.set(
-                            objectWorldPosition.x,
-                            boundingBox.max.y, // Kaki pemain di atas permukaan objek
-                            objectWorldPosition.z
-                        );
-                        player.isGrounded = true;
-                    } else {
-                        console.warn(`${targetObjectName} not found. Using default player position.`);
-                        player.position.set(0, 10, 5); // Posisi awal default (Y=10 agar tidak tembus lantai jika lantai di Y=0)
-                        player.isGrounded = false; // Mungkin jatuh jika tidak ada apa-apa di bawah
-                    }
-                    // Atur posisi kamera berdasarkan kaki pemain + tinggi mata
-                    controls.getObject().position.set(
-                        player.position.x,
-                        player.position.y + PLAYER_EYE_HEIGHT,
-                        player.position.z
-                    );
-
-                    console.log(`Initial player feet position:`, player.position);
-                    console.log(`Initial camera position:`, controls.getObject().position);
-                    animate();
                 },
-                (xhr) => console.log((xhr.loaded / xhr.total * 100) + '% loaded'),
-                (error) => console.error('Error loading GLB model:', error)
+                undefined,
+                (error) => {
+                    console.error("Error loading static screen texture:", error);
+                    // Fallback jika tekstur gagal dimuat
+                    staticTVMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, emissive: 0x333333, emissiveIntensity: 1 });
+                }
             );
+
+
+            const loader = new GLTFLoader();
+            loader.load('EDGEHOG ISLAND LABOLATORY.glb', (gltf) => {
+                model = gltf.scene;
+                model.traverse((child) => {
+                    // console.log(`Object Name: ${child.name}, Type: ${child.type}, UUID: ${child.uuid}`);
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        if (collidableObjectNames.includes(child.name)) {
+                            collidableMeshes.push(child);
+                            collisionBoundingBoxes.set(child.name, new THREE.Box3().setFromObject(child));
+                        }
+                    }
+                });
+
+                tvScreenMesh = model.getObjectByName('Object_13105');
+                if (tvScreenMesh && tvScreenMesh.isMesh && tvScreenMesh.material) {
+                    originalTVMaterial = tvScreenMesh.material.clone();
+                    console.log("TV Screen Mesh (Object_13105) found and material stored.");
+                } else {
+                    console.error("CRITICAL: TV Screen Mesh (Object_13105) not found or has no material. TV interaction will not work correctly.");
+                }
+
+                paperObject = model.getObjectByName('Object_23');
+                if (paperObject && paperObject.isMesh) {
+                    originalPaperRotation = paperObject.rotation.clone();
+                }
+                steamObject = model.getObjectByName('Object_17');
+                if (steamObject && steamObject.isMesh) {
+                    originalSteamPosition = steamObject.position.clone();
+                    if (steamObject.material) {
+                        steamObject.material.transparent = true;
+                        originalSteamOpacity = steamObject.material.opacity;
+                        steamObject.visible = false;
+                    }
+                }
+                steamTriggerObject = model.getObjectByName('Object_18');
+
+                model.scale.set(0.05, 0.05, 0.05);
+                scene.add(model);
+
+                const targetObjectName = 'Object_6';
+                let targetObject = model.getObjectByName(targetObjectName);
+                if (targetObject) {
+                    const boundingBox = new THREE.Box3().setFromObject(targetObject);
+                    targetObject.getWorldPosition(player.position);
+                    player.position.y = boundingBox.max.y;
+                    player.isGrounded = true;
+                } else {
+                    player.position.set(0, 10, 5);
+                }
+                controls.getObject().position.set(player.position.x, player.position.y + PLAYER_EYE_HEIGHT, player.position.z);
+                player.boundingBox.setFromCenterAndSize(
+                    new THREE.Vector3(player.position.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, player.position.z),
+                    new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
+                );
+                animate();
+            }, (xhr) => console.log((xhr.loaded / xhr.total * 100) + '% loaded'), (error) => console.error(error));
 
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
@@ -260,46 +293,79 @@
         }
 
         function setupLighting() {
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-            scene.add(ambientLight);
-            const mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 3.5);
-            mainDirectionalLight.position.set(40, 50, 30);
-            mainDirectionalLight.castShadow = true;
-            mainDirectionalLight.shadow.mapSize.width = 2048;
-            mainDirectionalLight.shadow.mapSize.height = 2048;
-            mainDirectionalLight.shadow.camera.near = 0.5;
-            mainDirectionalLight.shadow.camera.far = 150;
-            mainDirectionalLight.shadow.camera.left = -60;
-            mainDirectionalLight.shadow.camera.right = 60;
-            mainDirectionalLight.shadow.camera.top = 60;
-            mainDirectionalLight.shadow.camera.bottom = -60;
-            mainDirectionalLight.shadow.bias = -0.0005;
-            scene.add(mainDirectionalLight);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 3.5);
+            dirLight.position.set(40, 50, 30);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.set(2048, 2048);
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 150;
+            dirLight.shadow.bias = -0.0005;
+            scene.add(dirLight);
         }
 
         function onKeyDown(event) {
-            switch (event.code) {
-                case 'KeyW': keys.W = true; break;
-                case 'KeyA': keys.A = true; break;
-                case 'KeyS': keys.S = true; break;
-                case 'KeyD': keys.D = true; break;
-                case 'ShiftLeft': keys.SHIFT_LEFT = true; break;
-                case 'Space': keys.SPACE = true; break;
+            const key = event.code.replace('Key', '').replace('Left', '_LEFT');
+            if (keys.hasOwnProperty(key)) keys[key] = true;
+
+            if (event.code === 'KeyE' && controls.isLocked) {
+                handleInteraction();
             }
         }
 
         function onKeyUp(event) {
-            switch (event.code) {
-                case 'KeyW': keys.W = false; break;
-                case 'KeyA': keys.A = false; break;
-                case 'KeyS': keys.S = false; break;
-                case 'KeyD': keys.D = false; break;
-                case 'ShiftLeft': keys.SHIFT_LEFT = false; break;
-                case 'Space': keys.SPACE = false; break;
-            }
+            const key = event.code.replace('Key', '').replace('Left', '_LEFT');
+            if (keys.hasOwnProperty(key)) keys[key] = false;
         }
 
-        // ... (kode di atas fungsi updatePlayerAndCamera tetap sama) ...
+        function handleInteraction() {
+            interactionRaycaster.setFromCamera({ x: 0, y: 0 }, camera);
+            const interactableSceneObjects = [];
+            interactiveObjectNames.forEach(name => {
+                const obj = model.getObjectByName(name);
+                if (obj) interactableSceneObjects.push(obj);
+            });
+            const intersects = interactionRaycaster.intersectObjects(interactableSceneObjects, true);
+
+            if (intersects.length > 0 && intersects[0].distance < INTERACTION_DISTANCE) {
+                const intersectedObject = intersects[0].object;
+                let interactiveObjectName = intersectedObject.name;
+                let current = intersectedObject;
+                while (current && !interactiveObjectNames.includes(current.name)) {
+                    current = current.parent;
+                }
+                if (current) {
+                    interactiveObjectName = current.name;
+                }
+
+                console.log("Interacting with:", interactiveObjectName);
+                if (interactiveObjectName === 'Object_13108' && tvScreenMesh && originalTVMaterial && staticTVMaterial) { // Pastikan staticTVMaterial sudah ada
+                    isTVOn = !isTVOn;
+                    if (isTVOn) {
+                        tvScreenMesh.material = staticTVMaterial;
+                        console.log("TV ON - Static Screen");
+                    } else {
+                        tvScreenMesh.material = originalTVMaterial;
+                        console.log("TV OFF");
+                    }
+                } else if (interactiveObjectName === 'Object_23' && paperObject && !isPaperAnimating) {
+                    isPaperAnimating = true;
+                    paperAnimationTime = 0;
+                } else if (interactiveObjectName === 'Object_18' && steamObject) {
+                    isSteamActive = !isSteamActive;
+                    if (isSteamActive) {
+                        steamAnimationTime = 0;
+                        steamObject.position.copy(originalSteamPosition);
+                        if (steamObject.material) steamObject.material.opacity = originalSteamOpacity;
+                        steamObject.visible = true;
+                        console.log("Steam Activated");
+                    } else {
+                        steamObject.visible = false;
+                        console.log("Steam Deactivated");
+                    }
+                }
+            }
+        }
 
         function updatePlayerAndCamera(deltaTime) {
             if (!controls.isLocked) {
@@ -307,179 +373,128 @@
                 player.velocity.z = 0;
                 return;
             }
-
-            const cameraReference = controls.getObject();
-            const effectiveMoveSpeed = 8.0;
-            const sprintMultiplier = 1.5;
-
-            const actualSpeed = (keys.SHIFT_LEFT ? sprintMultiplier : 1) * effectiveMoveSpeed * deltaTime;
-
-            // --- Handle Horizontal Movement Input ---
-            cameraReference.getWorldDirection(_forward);
-            _forward.y = 0;
-            _forward.normalize();
-            _right.crossVectors(cameraReference.up, _forward).normalize();
-
+            // --- Player Movement Logic (Unchanged) ---
+            const camRef = controls.getObject();
+            const speed = (keys.SHIFT_LEFT ? 1.5 : 1) * 8.0 * deltaTime;
+            camRef.getWorldDirection(_forward);
+            _forward.y = 0; _forward.normalize();
+            _right.crossVectors(camRef.up, _forward).normalize();
             _movementDirection.set(0, 0, 0);
             if (keys.W) _movementDirection.add(_forward);
             if (keys.S) _movementDirection.sub(_forward);
-            if (keys.A) _movementDirection.add(_right); // KOREKSI: Strafe Kiri Standar
-            if (keys.D) _movementDirection.sub(_right); // KOREKSI: Strafe Kanan Standar
+            if (keys.A) _movementDirection.add(_right);
+            if (keys.D) _movementDirection.sub(_right);
 
-
-            // --- Apply Gravity ---
-            if (!player.isGrounded) {
-                player.velocity.y -= GRAVITY * deltaTime;
-            }
-
-            // --- Handle Jumping ---
+            if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime;
             if (keys.SPACE && player.isGrounded && player.canJump) {
                 player.velocity.y = JUMP_IMPULSE;
                 player.isGrounded = false;
                 player.canJump = false;
             }
-            if (!keys.SPACE) {
-                player.canJump = true;
-            }
+            if (!keys.SPACE) player.canJump = true;
 
-            // --- Calculate Intended Horizontal Position Change ---
-            let intendedDeltaX = 0;
-            let intendedDeltaZ = 0;
+            let dX = 0, dZ = 0;
             if (_movementDirection.lengthSq() > 0) {
                 _movementDirection.normalize();
-                intendedDeltaX = _movementDirection.x * actualSpeed;
-                intendedDeltaZ = _movementDirection.z * actualSpeed;
+                dX = _movementDirection.x * speed;
+                dZ = _movementDirection.z * speed;
             }
 
-            // --- Vertical Collision and Ground Detection ---
-            const playerBaseY = player.position.y;
-            const groundRayOrigin = new THREE.Vector3(player.position.x, playerBaseY + PLAYER_FEET_RADIUS * 0.5, player.position.z);
-            const groundRayLength = Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS * 1.1;
-
+            const groundRayOrigin = new THREE.Vector3(player.position.x, player.position.y + PLAYER_FEET_RADIUS * 0.5, player.position.z);
             raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
-            raycaster.far = groundRayLength;
-            const groundIntersects = raycaster.intersectObjects(collidableMeshes, true);
-
+            raycaster.far = Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS * 1.1;
+            const groundHits = raycaster.intersectObjects(collidableMeshes, true);
             player.isGrounded = false;
-
-            if (player.velocity.y <= 0) {
-                if (groundIntersects.length > 0) {
-                    const closestGround = groundIntersects[0];
-                    if (closestGround.distance <= PLAYER_FEET_RADIUS * 1.0 + 0.01) { // Tambah epsilon kecil
-                        player.position.y = closestGround.point.y;
-                        player.velocity.y = 0;
-                        player.isGrounded = true;
-                    }
-                }
+            if (player.velocity.y <= 0 && groundHits.length > 0 && groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01) {
+                player.position.y = groundHits[0].point.y;
+                player.velocity.y = 0;
+                player.isGrounded = true;
             }
+            if (!player.isGrounded) player.position.y += player.velocity.y * deltaTime;
 
-            if (!player.isGrounded) {
-                player.position.y += player.velocity.y * deltaTime;
-            }
-
-            // --- Head Collision ---
             if (player.velocity.y > 0) {
-                const headCheckOrigin = player.position.clone().add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT - 0.1, 0));
-                raycaster.set(headCheckOrigin, new THREE.Vector3(0, 1, 0));
+                const headOrigin = player.position.clone().add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT - 0.1, 0));
+                raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
                 raycaster.far = player.velocity.y * deltaTime + 0.2;
-                const headIntersects = raycaster.intersectObjects(collidableMeshes, true);
-                if (headIntersects.length > 0) {
-                    player.position.y = headIntersects[0].point.y - PLAYER_COLLISION_HEIGHT;
+                const headHits = raycaster.intersectObjects(collidableMeshes, true);
+                if (headHits.length > 0) {
+                    player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT;
                     player.velocity.y = 0;
                 }
             }
 
-            // --- Horizontal Collision & Step-Up (REVISED LOGIC) ---
-            const tempFuturePlayerPos = player.position.clone();
-            tempFuturePlayerPos.x += intendedDeltaX;
-            tempFuturePlayerPos.z += intendedDeltaZ;
-
+            const tempPos = player.position.clone();
+            tempPos.x += dX; tempPos.z += dZ;
             player.boundingBox.setFromCenterAndSize(
-                new THREE.Vector3(tempFuturePlayerPos.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, tempFuturePlayerPos.z),
+                new THREE.Vector3(tempPos.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, tempPos.z),
                 new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
             );
-
-            let canMoveHorizontally = true;         // Asumsikan bisa bergerak
-            let collisionResolvedByStepping = false; // Flag jika tabrakan diatasi dengan step-up
-
-            if (intendedDeltaX !== 0 || intendedDeltaZ !== 0) { // Hanya cek jika ada niat bergerak horizontal
-                for (let mesh of collidableMeshes) {
-                    const meshBoundingBox = collisionBoundingBoxes.get(mesh.name);
-                    if (meshBoundingBox && player.boundingBox.intersectsBox(meshBoundingBox)) {
-                        // Terdeteksi tabrakan. Coba step-up ke mesh ini.
-                        let didStepThisMesh = false;
-
-                        const headClearanceCheckOrigin = player.position.clone();
-                        // Proyeksikan titik cek sedikit ke arah gerakan untuk head clearance
-                        const checkOffsetScale = playerRadiusBuffer * 0.5; // Seberapa jauh ke depan untuk cek head clearance
-                        headClearanceCheckOrigin.x += _movementDirection.x * checkOffsetScale;
-                        headClearanceCheckOrigin.z += _movementDirection.z * checkOffsetScale;
-                        headClearanceCheckOrigin.y += MAX_STEP_HEIGHT + 0.1; // Dari sedikit di atas tinggi step maksimal
-
-                        raycaster.set(headClearanceCheckOrigin, _movementDirection); // Raycast ke arah gerakan
-                        raycaster.far = playerRadiusBuffer; // Jarak cek yang relevan
-                        const headClearanceIntersects = raycaster.intersectObject(mesh, true);
-
-                        if (headClearanceIntersects.length === 0) { // Jika ada ruang di atas untuk kepala
-                            const stepSurfaceRayOrigin = new THREE.Vector3(
-                                tempFuturePlayerPos.x, // Cek dari posisi XZ yang dituju
-                                player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS, // Mulai raycast dari atas tinggi step
-                                tempFuturePlayerPos.z
-                            );
-                            raycaster.set(stepSurfaceRayOrigin, new THREE.Vector3(0, -1, 0)); // Raycast ke bawah
-                            raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5; // Jarak cek ke bawah
-                            const stepSurfaceIntersects = raycaster.intersectObject(mesh, true);
-
-                            if (stepSurfaceIntersects.length > 0) {
-                                const stepSurfaceY = stepSurfaceIntersects[0].point.y;
-                                // Cek apakah permukaan pijakan valid (di atas atau sama dengan posisi kaki saat ini, dan dalam jangkauan MAX_STEP_HEIGHT)
-                                const yDifference = stepSurfaceY - player.position.y;
-                                if (yDifference >= -0.01 && yDifference <= MAX_STEP_HEIGHT) { // Izinkan toleransi kecil untuk permukaan datar
-                                    player.position.x = tempFuturePlayerPos.x; // Pindah ke XZ yang dituju
-                                    player.position.z = tempFuturePlayerPos.z;
-                                    player.position.y = stepSurfaceY;      // Naikkan ke permukaan pijakan
-                                    player.isGrounded = true;
-                                    player.velocity.y = 0;
-                                    collisionResolvedByStepping = true; // Tabrakan diatasi dengan step-up
-                                    didStepThisMesh = true;
-                                    // console.log("Stepped up onto:", mesh.name, "to Y:", stepSurfaceY.toFixed(2));
-                                    break; // Keluar dari loop collidableMeshes karena tabrakan sudah diatasi
+            let canMoveH = true; let stepped = false;
+            if (dX !== 0 || dZ !== 0) {
+                for (const mesh of collidableMeshes) {
+                    const box = collisionBoundingBoxes.get(mesh.name);
+                    if (box && !box.isEmpty() && player.boundingBox.intersectsBox(box)) {
+                        let didStep = false;
+                        const headClearOrigin = player.position.clone();
+                        headClearOrigin.x += _movementDirection.x * playerRadiusBuffer * 0.5;
+                        headClearOrigin.z += _movementDirection.z * playerRadiusBuffer * 0.5;
+                        headClearOrigin.y += MAX_STEP_HEIGHT + 0.1;
+                        raycaster.set(headClearOrigin, _movementDirection);
+                        raycaster.far = playerRadiusBuffer;
+                        if (raycaster.intersectObject(mesh, true).length === 0) {
+                            const stepSurfOrigin = new THREE.Vector3(tempPos.x, player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS, tempPos.z);
+                            raycaster.set(stepSurfOrigin, new THREE.Vector3(0, -1, 0));
+                            raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
+                            const stepHits = raycaster.intersectObject(mesh, true);
+                            if (stepHits.length > 0) {
+                                const yDiff = stepHits[0].point.y - player.position.y;
+                                if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) {
+                                    player.position.set(tempPos.x, stepHits[0].point.y, tempPos.z);
+                                    player.isGrounded = true; player.velocity.y = 0;
+                                    stepped = true; didStep = true; break;
                                 }
                             }
                         }
-
-                        if (!didStepThisMesh) {
-                            // Tabrakan terjadi, dan tidak bisa step-up ke mesh INI.
-                            // Ini berarti ini adalah dinding atau halangan yang terlalu tinggi.
-                            canMoveHorizontally = false;
-                            // console.log("Wall collision with:", mesh.name, ". Preventing horizontal move.");
-                            break; // Keluar dari loop collidableMeshes, gerakan diblokir.
-                        }
+                        if (!didStep) { canMoveH = false; break; }
                     }
                 }
             }
+            if (!stepped && canMoveH) player.position.set(tempPos.x, player.position.y, tempPos.z);
+            camRef.position.set(player.position.x, player.position.y + PLAYER_EYE_HEIGHT, player.position.z);
+            // --- End Player Movement Logic ---
 
 
-            // --- Final Application of Movement ---
-            if (collisionResolvedByStepping) {
-                // Posisi sudah diperbarui selama step-up yang berhasil.
-            } else if (canMoveHorizontally) {
-                // Tidak ada tabrakan yang menghalangi, atau tidak ada tabrakan sama sekali.
-                player.position.x = tempFuturePlayerPos.x;
-                player.position.z = tempFuturePlayerPos.z;
-            } else {
-                // Gerakan diblokir oleh tabrakan yang tidak bisa di-step-up.
-                // console.log("Final decision: No horizontal movement this frame due to wall.");
+            // Animasi Interaktif
+            if (isTVOn && staticTexture && staticTVMaterial === tvScreenMesh.material) { // Animasikan offset hanya jika TV menyala DENGAN material static
+                staticTexture.offset.x += Math.random() * 0.1 - 0.05; // Gerakan acak kecil
+                staticTexture.offset.y += Math.random() * 0.1 - 0.05;
+                // Pastikan offset tetap dalam rentang 0-1 agar repeat wrapping bekerja
+                staticTexture.offset.x = (staticTexture.offset.x % 1 + 1) % 1;
+                staticTexture.offset.y = (staticTexture.offset.y % 1 + 1) % 1;
             }
 
-            // --- Final Camera Update ---
-            cameraReference.position.x = player.position.x;
-            cameraReference.position.y = player.position.y + PLAYER_EYE_HEIGHT;
-            cameraReference.position.z = player.position.z;
+
+            if (isPaperAnimating && paperObject) {
+                paperAnimationTime += deltaTime;
+                const progress = paperAnimationTime / PAPER_ANIMATION_DURATION;
+                paperObject.rotation.z = originalPaperRotation.z + Math.sin(progress * Math.PI * 4) * 0.15;
+                if (paperAnimationTime >= PAPER_ANIMATION_DURATION) {
+                    isPaperAnimating = false;
+                    paperObject.rotation.copy(originalPaperRotation);
+                }
+            }
+
+            if (isSteamActive && steamObject && originalSteamPosition && steamObject.material) {
+                steamAnimationTime += deltaTime;
+                let loopProgress = (steamAnimationTime % STEAM_LOOP_DURATION) / STEAM_LOOP_DURATION;
+                steamObject.position.set(
+                    originalSteamPosition.x,
+                    originalSteamPosition.y + loopProgress * STEAM_MAX_HEIGHT_OFFSET,
+                    originalSteamPosition.z
+                );
+                steamObject.material.opacity = originalSteamOpacity * (1 - loopProgress);
+            }
         }
-
-        // ... (sisa kode seperti onWindowResize, animate, init tetap sama) ...
-
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -489,7 +504,7 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            const deltaTime = Math.min(0.05, clock.getDelta()); // Batasi deltaTime untuk mencegah bug fisika saat frame drop
+            const deltaTime = Math.min(0.05, clock.getDelta());
             updatePlayerAndCamera(deltaTime);
             renderer.render(scene, camera);
         }
