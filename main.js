@@ -15,21 +15,18 @@ const keys = {
   D: false,
   SHIFT_LEFT: false,
   SPACE: false,
-  E_INTERACT: false, // Diganti agar tidak bentrok dengan gerakan naik/turun mode ghost
-  G: false, // Untuk toggle mode ghost
-  // NEW: Untuk gerakan vertikal di mode ghost
+  E_INTERACT: false,
+  G: false,
   Q_GHOST_DOWN: false,
-  E_GHOST_UP: false,
 };
 
-// NEW: State untuk mode ghost
 let isGhostMode = false;
-const GHOST_MODE_SPEED_MULTIPLIER = 2.0; // Bergerak lebih cepat di mode ghost
+const GHOST_MODE_SPEED_MULTIPLIER = 2.0;
 
 const PLAYER_EYE_HEIGHT = 10.5;
-const PLAYER_COLLISION_HEIGHT = 1.8; // Tinggi bounding box player untuk kolisi
-const GRAVITY = 20.0; // Naikkan gravitasi agar lompatan lebih terasa
-const JUMP_IMPULSE = 8.0; // Sesuaikan kekuatan lompatan
+const PLAYER_COLLISION_HEIGHT = 1.8;
+const GRAVITY = 20.0;
+const JUMP_IMPULSE = 8.0;
 const MAX_STEP_HEIGHT = 0.6;
 const playerRadiusBuffer = 4.0;
 const PLAYER_FEET_RADIUS = playerRadiusBuffer * 0.8;
@@ -73,7 +70,7 @@ const instructions = document.getElementById("instructions");
 
 const _worldDirection = new THREE.Vector3();
 const _movementDirection = new THREE.Vector3();
-const _upVector = new THREE.Vector3(0, 1, 0); // Vektor atas
+const _upVector = new THREE.Vector3(0, 1, 0);
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 
@@ -101,7 +98,6 @@ let paperTargetOpacity = 0;
 let paperCurrentOpacity = 0;
 
 function init() {
-  // ... (kode init tetap sama, pastikan semua elemen DOM diambil dengan benar) ...
   console.log("Init function started.");
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb);
@@ -246,13 +242,18 @@ function init() {
         player.position.y = boundingBox.max.y;
         console.log("Player initial position (on Object_6):", player.position);
       } else {
-        player.position.set(0, PLAYER_EYE_HEIGHT, 5); // Set Y to eye height initially for consistency
+        // Mengatur Y agar player.position.y adalah dasar kaki
+        player.position.set(0, PLAYER_COLLISION_HEIGHT / 2, 5);
         console.log("Player initial position (fallback):", player.position);
       }
       player.isGrounded = true;
 
-      controls.getObject().position.copy(player.position); // Kamera mulai di posisi player
-      controls.getObject().position.y += PLAYER_EYE_HEIGHT; // Naikkan kamera ke tinggi mata
+      // Atur kamera berdasarkan posisi player (kaki) + tinggi mata
+      controls.getObject().position.set(
+        player.position.x,
+        player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2, // Sesuaikan agar eye height relatif ke tengah collider
+        player.position.z
+      );
 
       controls.getObject().updateMatrixWorld();
       camera.updateMatrixWorld();
@@ -260,9 +261,9 @@ function init() {
       player.boundingBox.setFromCenterAndSize(
         new THREE.Vector3(
           player.position.x,
-          player.position.y + PLAYER_COLLISION_HEIGHT / 2,
+          player.position.y,
           player.position.z
-        ),
+        ), // Bounding box berpusat di player.position
         new THREE.Vector3(
           playerRadiusBuffer * 2,
           PLAYER_COLLISION_HEIGHT,
@@ -284,7 +285,7 @@ function init() {
   window.addEventListener("resize", onWindowResize, false);
   console.log("Init function finished.");
 }
-// ... (loadSonicModel, setupLighting tetap sama) ...
+
 function loadSonicModel() {
   console.log("loadSonicModel function was called!");
   const loader = new GLTFLoader();
@@ -329,33 +330,9 @@ function loadSonicModel() {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
-          // DEBUG MATERIAL:
-          // child.material = new THREE.MeshBasicMaterial({ color: 0xff00ff, wireframe: true, side: THREE.DoubleSide });
-          console.log("Original Material for", child.name, ":", child.material);
-          if (child.material) {
-            console.log(
-              "Opacity:",
-              child.material.opacity,
-              "Transparent:",
-              child.material.transparent,
-              "Visible:",
-              child.material.visible
-            );
-          }
         }
       });
 
-      console.log("Sonic model visibility pre-add:", sonicModel.visible);
-      if (sonicModel.children.length === 0) {
-        console.warn(
-          "Sonic model has NO children meshes. Is the GLTF empty or structured differently?"
-        );
-      } else {
-        console.log("Sonic model children count:", sonicModel.children.length);
-      }
-
-      sonicModel.matrixAutoUpdate = true;
-      sonicModel.updateMatrixWorld(true);
       scene.add(sonicModel);
       console.log("Sonic model added to scene.");
 
@@ -363,12 +340,10 @@ function loadSonicModel() {
       scene.add(sonicBoxHelper);
       console.log("Sonic BoxHelper added to scene.");
 
-      // TEST CUBE
       const testCubeGeo = new THREE.BoxGeometry(2, 2, 2);
       const testCubeMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
       const testCube = new THREE.Mesh(testCubeGeo, testCubeMat);
       if (sonicModel && sonicModel.position) {
-        // Check if sonicModel.position is defined
         testCube.position.copy(sonicModel.position);
         testCube.position.y += 3;
       } else {
@@ -376,7 +351,7 @@ function loadSonicModel() {
           player.position.x,
           player.position.y + 3,
           player.position.z - 10
-        ); // Fallback for testCube
+        );
       }
       scene.add(testCube);
       console.log("Test Cube added at:", testCube.position);
@@ -385,12 +360,6 @@ function loadSonicModel() {
         sonicMixer = new THREE.AnimationMixer(sonicModel);
         const action = sonicMixer.clipAction(sonicAnimationClips[0]);
         action.play();
-        console.log(
-          "Playing Sonic animation:",
-          sonicAnimationClips[0].name || "Default Animation"
-        );
-      } else {
-        console.warn("Sonic model loaded, but no animations found in GLTF.");
       }
     },
     (xhr) => {
@@ -415,7 +384,6 @@ function setupLighting() {
 }
 
 function onKeyDown(event) {
-  // MODIFIED: Tangani keydown untuk lompat dan mode ghost
   switch (event.code) {
     case "KeyW":
       keys.W = true;
@@ -434,40 +402,30 @@ function onKeyDown(event) {
       break;
     case "Space":
       keys.SPACE = true;
-      // Logika lompat dipindahkan ke updatePlayerAndCamera agar lebih konsisten
       break;
-    case "KeyE": // Tombol E sekarang untuk interaksi DAN naik di mode ghost
-      if (isGhostMode) {
-        keys.E_GHOST_UP = true;
-      } else {
-        keys.E_INTERACT = true; // Hanya set flag interaksi jika tidak di mode ghost
-        if (controls.isLocked) handleInteraction(); // Panggil interaksi langsung jika tidak ghost
-      }
+    case "KeyE":
+      keys.E_INTERACT = true;
+      if (controls.isLocked) handleInteraction();
       break;
-    case "KeyQ": // Tombol Q untuk turun di mode ghost
+    case "KeyQ":
       if (isGhostMode) {
         keys.Q_GHOST_DOWN = true;
       }
       break;
     case "KeyG":
       if (!keys.G) {
-        // Hanya toggle saat pertama kali ditekan (mencegah multi-toggle cepat)
         isGhostMode = !isGhostMode;
         console.log("Ghost Mode:", isGhostMode ? "ON" : "OFF");
         if (isGhostMode) {
-          player.velocity.y = 0; // Hentikan momentum vertikal saat masuk mode ghost
-        } else {
-          // Saat keluar mode ghost, pastikan player jatuh jika di udara
-          // Ini akan ditangani oleh logika gravitasi normal di updatePlayerAndCamera
+          player.velocity.y = 0;
         }
       }
-      keys.G = true; // Set flag bahwa G sedang ditekan
+      keys.G = true;
       break;
   }
 }
 
 function onKeyUp(event) {
-  // MODIFIED: Tangani keyup
   switch (event.code) {
     case "KeyW":
       keys.W = false;
@@ -489,18 +447,16 @@ function onKeyUp(event) {
       break;
     case "KeyE":
       keys.E_INTERACT = false;
-      keys.E_GHOST_UP = false;
       break;
     case "KeyQ":
       keys.Q_GHOST_DOWN = false;
       break;
     case "KeyG":
-      keys.G = false; // Reset flag G saat dilepas
+      keys.G = false;
       break;
   }
 }
 
-// ... (startPaperAnimation, updatePaperAnimation, handleInteraction tetap sama) ...
 function startPaperAnimation(showTexture) {
   if (!paperAnimationActive) {
     paperAnimationActive = true;
@@ -549,17 +505,17 @@ function updatePaperAnimation(deltaTime) {
 }
 
 function handleInteraction() {
-  // Pastikan hanya berinteraksi jika TIDAK dalam mode ghost
-  if (isGhostMode) return;
-
   interactionRaycaster.setFromCamera({ x: 0, y: 0 }, camera);
   const interactableSceneObjects = [];
   interactiveObjectNames.forEach((name) => {
     const obj = model.getObjectByName(name);
     if (obj) interactableSceneObjects.push(obj);
   });
+  const actualInteractables = interactableSceneObjects.filter(
+    (obj) => obj.children.length > 0 || obj.isMesh
+  );
   const intersects = interactionRaycaster.intersectObjects(
-    interactableSceneObjects,
+    actualInteractables,
     true
   );
 
@@ -570,11 +526,20 @@ function handleInteraction() {
 
     while (current && !interactiveObjectNames.includes(current.name)) {
       current = current.parent;
+      if (current && current.isScene) {
+        current = null;
+        break;
+      }
     }
+
     if (current) {
       interactiveObjectName = current.name;
     } else {
-      return;
+      if (interactiveObjectNames.includes(intersectedRawObject.name)) {
+        interactiveObjectName = intersectedRawObject.name;
+      } else {
+        return;
+      }
     }
 
     if (
@@ -617,7 +582,7 @@ function handleInteraction() {
 function updatePlayerAndCamera(deltaTime) {
   if (controls.isLocked) {
     const camRef = controls.getObject();
-    let baseSpeed = 10.0;
+    let baseSpeed = 8.0;
     let currentSpeed = (keys.SHIFT_LEFT ? 1.5 : 1) * baseSpeed;
 
     if (isGhostMode) {
@@ -626,14 +591,12 @@ function updatePlayerAndCamera(deltaTime) {
 
     const actualSpeed = currentSpeed * deltaTime;
 
-    // Gerakan Horizontal (WASD)
-    camRef.getWorldDirection(_forward); // Arah pandang kamera
-    // Jika tidak di mode ghost, proyeksikan ke bidang XZ
+    camRef.getWorldDirection(_forward);
     if (!isGhostMode) {
       _forward.y = 0;
     }
     _forward.normalize();
-    _right.crossVectors(camRef.up, _forward).normalize(); // Arah kanan relatif terhadap pandangan
+    _right.crossVectors(camRef.up, _forward).normalize();
 
     _movementDirection.set(0, 0, 0);
     if (keys.W) _movementDirection.add(_forward);
@@ -641,59 +604,56 @@ function updatePlayerAndCamera(deltaTime) {
     if (keys.A) _movementDirection.add(_right);
     if (keys.D) _movementDirection.sub(_right);
 
-    // Normalisasi untuk kecepatan diagonal yang konsisten
     if (_movementDirection.lengthSq() > 0) {
       _movementDirection.normalize();
     }
 
     const dX = _movementDirection.x * actualSpeed;
-    const dYfromWASD = _movementDirection.y * actualSpeed; // Hanya relevan di mode ghost
+    const dYfromWASD = _movementDirection.y * actualSpeed;
     const dZ = _movementDirection.z * actualSpeed;
 
+    // Simpan posisi kamera sebelum diubah oleh logika player
+    const prevCamY = camRef.position.y;
+
     if (isGhostMode) {
-      player.velocity.y = 0; // Tidak ada gravitasi di mode ghost
+      player.velocity.y = 0;
       player.position.x += dX;
-      player.position.y += dYfromWASD; // Gerakan Y dari W/S jika kamera miring
+      player.position.y += dYfromWASD;
       player.position.z += dZ;
 
-      // Gerakan Vertikal Independen (Q/E) di Mode Ghost
-      if (keys.E_GHOST_UP) player.position.y += actualSpeed;
+      if (keys.SPACE) player.position.y += actualSpeed;
       if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed;
 
-      player.isGrounded = false; // Di mode ghost, player tidak pernah grounded
+      player.isGrounded = false;
+      // Langsung update posisi kamera di mode ghost
+      camRef.position.copy(player.position);
     } else {
-      // Mode Normal (dengan gravitasi dan kolisi)
-      // Gravitasi
+      // Mode Normal
       if (!player.isGrounded) {
         player.velocity.y -= GRAVITY * deltaTime;
       }
 
-      // Lompat
       if (keys.SPACE && player.isGrounded && player.canJump) {
         player.velocity.y = JUMP_IMPULSE;
         player.isGrounded = false;
-        player.canJump = false; // Mencegah lompat ganda jika spasi ditahan
+        player.canJump = false;
       }
       if (!keys.SPACE) {
-        // Boleh lompat lagi setelah spasi dilepas
         player.canJump = true;
       }
 
-      // Periksa kolisi dengan tanah (Raycast ke bawah)
       const groundRayOrigin = new THREE.Vector3(
         player.position.x,
         player.position.y + PLAYER_FEET_RADIUS * 0.5,
         player.position.z
       );
       raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
-      // Jarak raycast harus cukup untuk mendeteksi tanah bahkan saat jatuh cepat
       raycaster.far = Math.max(
         PLAYER_FEET_RADIUS * 1.1,
         Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS
       );
       const groundHits = raycaster.intersectObjects(collidableMeshes, true);
 
-      let onGroundBeforeMove = player.isGrounded;
       player.isGrounded = false;
 
       if (
@@ -701,40 +661,33 @@ function updatePlayerAndCamera(deltaTime) {
         groundHits.length > 0 &&
         groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01
       ) {
-        // Jika menyentuh tanah
-        player.position.y = groundHits[0].point.y;
+        player.position.y = groundHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2; // Set ke dasar collider
         player.velocity.y = 0;
         player.isGrounded = true;
       }
 
-      // Terapkan kecepatan vertikal
       player.position.y += player.velocity.y * deltaTime;
 
-      // Kolisi Kepala (Raycast ke atas saat melompat)
       if (player.velocity.y > 0) {
         const headOrigin = player.position
           .clone()
-          .add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT - 0.1, 0));
+          .add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT / 2 - 0.1, 0)); // Dari atas collider
         raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
-        raycaster.far = player.velocity.y * deltaTime + 0.2; // Jarak raycast berdasarkan kecepatan
+        raycaster.far = player.velocity.y * deltaTime + 0.2;
         const headHits = raycaster.intersectObjects(collidableMeshes, true);
         if (headHits.length > 0) {
-          player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT; // Tempelkan di bawah objek
-          player.velocity.y = 0; // Hentikan momentum ke atas
+          player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT / 2;
+          player.velocity.y = 0;
         }
       }
 
-      // Kolisi Horizontal dan Step-up
-      const tempPos = player.position.clone();
+      const tempPos = player.position.clone(); // Gunakan player.position yang sudah diupdate Y-nya
       tempPos.x += dX;
       tempPos.z += dZ;
 
+      // Bounding box sekarang berpusat di player.position
       player.boundingBox.setFromCenterAndSize(
-        new THREE.Vector3(
-          tempPos.x,
-          player.position.y + PLAYER_COLLISION_HEIGHT / 2,
-          tempPos.z
-        ), // Cek di posisi Y saat ini
+        new THREE.Vector3(tempPos.x, player.position.y, tempPos.z),
         new THREE.Vector3(
           playerRadiusBuffer * 2,
           PLAYER_COLLISION_HEIGHT,
@@ -753,39 +706,38 @@ function updatePlayerAndCamera(deltaTime) {
             !meshBoundingBox.isEmpty() &&
             player.boundingBox.intersectsBox(meshBoundingBox)
           ) {
-            // Potensi Kolisi, coba step-up
             let didStep = false;
-            // Cek apakah ada ruang di atas kepala untuk step
+            // Cek ruang kepala untuk step, relatif terhadap player.position (pusat collider)
             const headClearOrigin = player.position.clone();
             headClearOrigin.x +=
-              _movementDirection.x * playerRadiusBuffer * 0.5; // Sedikit ke arah gerakan
+              _movementDirection.x * playerRadiusBuffer * 0.5;
             headClearOrigin.z +=
               _movementDirection.z * playerRadiusBuffer * 0.5;
-            headClearOrigin.y +=
-              MAX_STEP_HEIGHT + 0.1 + PLAYER_COLLISION_HEIGHT / 2; // Dari tengah player, naik setinggi step + sedikit buffer
+            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1; // Dari pusat collider + step
 
-            raycaster.set(headClearOrigin, _movementDirection); // Raycast ke arah gerakan
-            raycaster.far = playerRadiusBuffer; // Jarak yang cukup untuk mendeteksi dinding di depan
+            raycaster.set(headClearOrigin, _movementDirection);
+            raycaster.far = playerRadiusBuffer;
 
-            // Hanya coba step jika tidak ada halangan langsung di depan pada ketinggian step
             if (raycaster.intersectObject(mesh, true).length === 0) {
-              // Raycast ke bawah dari posisi potensial setelah step untuk mencari permukaan
+              // Raycast dari posisi potensial step ke bawah
               const stepSurfaceOrigin = new THREE.Vector3(
                 tempPos.x,
                 player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS,
                 tempPos.z
               );
               raycaster.set(stepSurfaceOrigin, new THREE.Vector3(0, -1, 0));
-              raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5; // Jarak raycast ke bawah
+              raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
               const stepHits = raycaster.intersectObject(mesh, true);
 
               if (stepHits.length > 0) {
-                const yDiff = stepHits[0].point.y - player.position.y;
+                const yDiff =
+                  stepHits[0].point.y +
+                  PLAYER_COLLISION_HEIGHT / 2 -
+                  player.position.y;
                 if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) {
-                  // Toleransi kecil dan batas step
                   player.position.set(
                     tempPos.x,
-                    stepHits[0].point.y,
+                    stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2,
                     tempPos.z
                   );
                   player.isGrounded = true;
@@ -797,7 +749,6 @@ function updatePlayerAndCamera(deltaTime) {
               }
             }
             if (!didStep) {
-              // Jika tidak bisa step, berarti tabrakan biasa
               canMoveHorizontally = false;
               break;
             }
@@ -809,20 +760,23 @@ function updatePlayerAndCamera(deltaTime) {
         player.position.x = tempPos.x;
         player.position.z = tempPos.z;
       }
-    } // Akhir dari mode Normal
-
-    // Update posisi kamera
-    camRef.position.copy(player.position);
-    camRef.position.y += PLAYER_EYE_HEIGHT; // Selalu tambahkan tinggi mata
+      // Update posisi kamera setelah semua logika player mode normal selesai
+      camRef.position.set(
+        player.position.x,
+        player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
+        player.position.z
+      );
+    }
   } else {
+    // Controls not locked
     player.velocity.x = 0;
     player.velocity.z = 0;
-    // Jika tidak di mode ghost, biarkan gravitasi bekerja saat controls unlocked
     if (!isGhostMode) {
+      // Hanya terapkan gravitasi jika tidak ghost mode
       if (!player.isGrounded) {
         player.velocity.y -= GRAVITY * deltaTime;
         player.position.y += player.velocity.y * deltaTime;
-        // Saat unlocked, jika jatuh dan kena tanah
+        // Cek tanah saat jatuh dengan controls unlocked
         const groundRayOrigin = new THREE.Vector3(
           player.position.x,
           player.position.y + PLAYER_FEET_RADIUS * 0.5,
@@ -839,15 +793,23 @@ function updatePlayerAndCamera(deltaTime) {
           groundHits.length > 0 &&
           groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01
         ) {
-          player.position.y = groundHits[0].point.y;
+          player.position.y =
+            groundHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2;
           player.velocity.y = 0;
           player.isGrounded = true;
         }
+        // Update posisi kamera juga
+        controls
+          .getObject()
+          .position.set(
+            player.position.x,
+            player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
+            player.position.z
+          );
       }
     }
   }
 
-  // ... (Update TV, Steam, Paper tetap sama) ...
   if (
     isTVOn &&
     staticTexture &&
@@ -879,7 +841,6 @@ function updatePlayerAndCamera(deltaTime) {
   }
   updatePaperAnimation(deltaTime);
 }
-// ... (onWindowResize, animate, pemanggilan init tetap sama) ...
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
