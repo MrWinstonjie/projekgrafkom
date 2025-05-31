@@ -41,6 +41,10 @@ let player = {
   boundingBox: new THREE.Box3(),
 };
 
+let object3Mesh, originalObject3Material, glowingObject3Material;
+let isObject3On = false;
+const OBJECT3_NAME = "Object_3"; // 
+
 const raycaster = new THREE.Raycaster();
 const interactionRaycaster = new THREE.Raycaster();
 const collidableMeshes = [];
@@ -217,6 +221,35 @@ function init() {
           }
         }
       });
+
+      object3Mesh = model.getObjectByName(OBJECT3_NAME);
+      if (object3Mesh && object3Mesh.isMesh) {
+          console.log(`${OBJECT3_NAME} found.`);
+          if (object3Mesh.material) {
+              originalObject3Material = object3Mesh.material.clone(); // Simpan material asli
+              console.log(`${OBJECT3_NAME} original material saved.`);
+          } else {
+              // Jika tidak ada material, buat material standar sebagai fallback asli
+              originalObject3Material = new THREE.MeshStandardMaterial({ color: 0x888888 }); // Warna abu-abu netral
+              object3Mesh.material = originalObject3Material.clone(); // Terapkan ke mesh
+              console.warn(`${OBJECT3_NAME} had no material, created a default one.`);
+          }
+
+          // Buat material saat menyala (kuning dan emissive)
+          glowingObject3Material = new THREE.MeshStandardMaterial({
+              color: 0xffff00,         // Warna dasar kuning
+              emissive: 0xffff00,      // Warna emisi kuning
+              emissiveIntensity: 1.0,  // Intensitas emisi (cahaya)
+              // Anda bisa menyesuaikan roughness, metalness jika perlu
+              // roughness: 0.5,
+              // metalness: 0.1,
+          });
+          console.log(`${OBJECT3_NAME} glowing material created.`);
+
+      } else {
+          console.warn(`${OBJECT3_NAME} not found or is not a mesh.`);
+      }
+
 
       tvScreenMesh = model.getObjectByName("Object_13105");
       if (tvScreenMesh && tvScreenMesh.isMesh && tvScreenMesh.material) {
@@ -598,73 +631,80 @@ function handleInteraction() {
   interactionRaycaster.setFromCamera({ x: 0, y: 0 }, camera);
   const interactableSceneObjects = [];
   interactiveObjectNames.forEach((name) => {
-    const obj = model.getObjectByName(name);
+    const obj = model.getObjectByName(name); 
     if (obj) interactableSceneObjects.push(obj);
   });
-  const actualInteractables = interactableSceneObjects.filter(
-    (obj) => obj.children.length > 0 || obj.isMesh
+  // ... (sisa kode filter actualInteractables) ...
+  const actualInteractables = interactableSceneObjects.filter( // Baris ini mungkin sudah ada, pastikan benar
+    (obj) => obj.children.length > 0 || obj.isMesh 
   );
-  const intersects = interactionRaycaster.intersectObjects(
-    actualInteractables,
-    true
-  );
+
+  if (actualInteractables.length === 0) return; 
+  const intersects = interactionRaycaster.intersectObjects(actualInteractables, true);
 
   if (intersects.length > 0 && intersects[0].distance < INTERACTION_DISTANCE) {
     const intersectedRawObject = intersects[0].object;
     let interactiveObjectName = intersectedRawObject.name;
     let current = intersectedRawObject;
-
     while (current && !interactiveObjectNames.includes(current.name)) {
-      current = current.parent;
-      if (current && current.isScene) {
-        current = null;
-        break;
-      }
+      current = current.parent; 
+      if (current && current.isScene) { current = null; break; }
     }
+    if (current) interactiveObjectName = current.name;
+    else if (interactiveObjectNames.includes(intersectedRawObject.name)) interactiveObjectName = intersectedRawObject.name;
+    else return;
 
-    if (current) {
-      interactiveObjectName = current.name;
-    } else {
-      if (interactiveObjectNames.includes(intersectedRawObject.name)) {
-        interactiveObjectName = intersectedRawObject.name;
-      } else {
-        return;
-      }
-    }
+    console.log("Interacting with:", interactiveObjectName);
 
-    if (
-      interactiveObjectName === "Object_13108" &&
-      tvScreenMesh &&
-      originalTVMaterial &&
-      staticTVMaterial
-    ) {
-      isTVOn = !isTVOn;
-      tvScreenMesh.material = isTVOn ? staticTVMaterial : originalTVMaterial;
+    if (interactiveObjectName === "Object_13108") {
+        // Logika untuk TV
+        if (tvScreenMesh && originalTVMaterial && staticTVMaterial) {
+            isTVOn = !isTVOn;
+            tvScreenMesh.material = isTVOn ? staticTVMaterial : originalTVMaterial;
+            console.log("TV Toggled:", isTVOn ? "ON" : "OFF");
+        }
+
+        // Logika BARU untuk Object_3 (Lampu Kuning)
+        if (object3Mesh && originalObject3Material && glowingObject3Material) {
+            isObject3On = !isObject3On; // Toggle status lampu
+            object3Mesh.material = isObject3On ? glowingObject3Material : originalObject3Material;
+            console.log(`${OBJECT3_NAME} Toggled:`, isObject3On ? "GLOWING YELLOW" : "OFF");
+            if (isObject3On) {
+                // Jika Anda ingin menambahkan sumber cahaya aktual saat lampu menyala
+                // Anda bisa membuat THREE.PointLight di posisi object3Mesh
+                // dan menambahkannya/menghapusnya dari scene atau toggle visibility-nya.
+                // Contoh:
+                // if (!object3Mesh.children.find(c => c.isLight)) {
+                //     const pointLight = new THREE.PointLight(0xffff00, 1, 10); // warna, intensitas, jarak
+                //     pointLight.name = "object3_light_source";
+                //     object3Mesh.add(pointLight); // Tambahkan sebagai child agar ikut posisi
+                // } else {
+                //     const existingLight = object3Mesh.getObjectByName("object3_light_source");
+                //     if (existingLight) existingLight.visible = true;
+                // }
+            } else {
+                // Matikan sumber cahaya tambahan jika ada
+                // const existingLight = object3Mesh.getObjectByName("object3_light_source");
+                // if (existingLight) existingLight.visible = false;
+            }
+        } else {
+            console.warn("Cannot toggle Object_3: mesh or materials not ready.");
+        }
+
     } else if (
-      interactiveObjectName === "Object_23" ||
-      interactiveObjectName === "Object_23025"
+      (interactiveObjectName === "Object_23" || interactiveObjectName === "Object_23025") && 
+      paperMesh && originalPaperMaterial && paperPrintMaterial && !paperAnimationActive
     ) {
-      if (
-        paperMesh &&
-        originalPaperMaterial &&
-        paperPrintMaterial &&
-        !paperAnimationActive
-      ) {
-        isPaperTextureVisible = !isPaperTextureVisible;
-        startPaperAnimation(isPaperTextureVisible);
-      }
+      isPaperTextureVisible = !isPaperTextureVisible; 
+      startPaperAnimation(isPaperTextureVisible);
     } else if (interactiveObjectName === "Object_18" && steamObject) {
       isSteamActive = !isSteamActive;
       if (isSteamActive) {
-        steamAnimationTime = 0;
-        if (originalSteamPosition)
-          steamObject.position.copy(originalSteamPosition);
-        if (steamObject.material)
-          steamObject.material.opacity = originalSteamOpacity;
+        steamAnimationTime = 0; 
+        if (originalSteamPosition) steamObject.position.copy(originalSteamPosition);
+        if (steamObject.material) steamObject.material.opacity = originalSteamOpacity;
         steamObject.visible = true;
-      } else {
-        steamObject.visible = false;
-      }
+      } else steamObject.visible = false;
     }
   }
 }
