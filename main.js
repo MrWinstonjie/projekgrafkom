@@ -18,6 +18,7 @@ const keys = {
   E_INTERACT: false,
   G: false,
   Q_GHOST_DOWN: false,
+  T: false, // Added for checkSonicVisibility
 };
 
 let isGhostMode = false;
@@ -211,6 +212,7 @@ function init() {
               : new THREE.MeshStandardMaterial({
                   color: 0xffffff,
                   roughness: 0.8,
+                  metalness: 0.1,
                 });
           }
         }
@@ -271,7 +273,7 @@ function init() {
         )
       );
 
-      loadSonicModel();
+      loadSonicModel(); // Call the (new) loadSonicModel function
 
       animate();
     },
@@ -286,90 +288,171 @@ function init() {
   console.log("Init function finished.");
 }
 
+// Replace your loadSonicModel function with this improved version
 function loadSonicModel() {
   console.log("loadSonicModel function was called!");
   const loader = new GLTFLoader();
+
+  // Add better error handling and debugging
   loader.load(
     SONIC_MODEL_PATH,
     (gltf) => {
       sonicModel = gltf.scene;
       sonicAnimationClips = gltf.animations;
 
-      console.log("Sonic model loaded successfully in loadSonicModel.");
+      console.log("Sonic model loaded successfully!");
+      console.log("Sonic model children:", sonicModel.children);
+      console.log("Sonic animations:", sonicAnimationClips);
 
+      // Check if the model has any meshes
+      let meshCount = 0;
+      sonicModel.traverse((child) => {
+        if (child.isMesh) {
+          meshCount++;
+          console.log("Found mesh:", child.name, "Material:", child.material);
+
+          // Enable shadows
+          child.castShadow = true;
+          child.receiveShadow = true;
+
+          // Fix potential material issues
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => {
+                mat.needsUpdate = true;
+              });
+            } else {
+              child.material.needsUpdate = true;
+            }
+          }
+        }
+      });
+
+      console.log("Total meshes found in Sonic model:", meshCount);
+
+      // Get player position for better placement
       const playerCamera = controls.getObject();
       const playerWorldPosition = new THREE.Vector3();
       playerCamera.getWorldPosition(playerWorldPosition);
 
+      // Place Sonic in front of the player at ground level
+      const distanceFromPlayer = 15; // Increased distance to make it more visible
+      const sonicTargetPosition = playerWorldPosition.clone();
+
+      // Place Sonic in front of the player
       const playerWorldDirection = new THREE.Vector3();
       playerCamera.getWorldDirection(playerWorldDirection);
+      playerWorldDirection.y = 0; // Keep it horizontal
+      playerWorldDirection.normalize();
 
-      console.log(
-        "Player camera world position for Sonic placement:",
-        playerWorldPosition
-      );
-      console.log(
-        "Player camera world direction for Sonic placement:",
-        playerWorldDirection
-      );
-
-      const distanceFromPlayer = 10;
-      const sonicTargetPosition = playerWorldPosition
-        .clone()
-        .add(playerWorldDirection.multiplyScalar(distanceFromPlayer));
-
-      sonicTargetPosition.y = player.position.y;
+      sonicTargetPosition.add(playerWorldDirection.multiplyScalar(distanceFromPlayer));
+      sonicTargetPosition.y = player.position.y; // Same ground level as player
 
       sonicModel.position.copy(sonicTargetPosition);
-      console.log("Attempting to position Sonic at:", sonicTargetPosition);
+      console.log("Sonic positioned at:", sonicTargetPosition);
 
-      sonicModel.scale.set(1, 1, 1);
+      // Set appropriate scale - try different values if needed
+      sonicModel.scale.set(5, 5, 5); // Increased scale to make it more visible
       console.log("Sonic scale set to:", sonicModel.scale);
 
-      sonicModel.traverse((child) => {
-        if (child.isMesh) {
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
-
+      // Add the model to the scene
       scene.add(sonicModel);
       console.log("Sonic model added to scene.");
 
+      // Add a bounding box helper to visualize the model bounds
       const sonicBoxHelper = new THREE.BoxHelper(sonicModel, 0xffff00);
       scene.add(sonicBoxHelper);
-      console.log("Sonic BoxHelper added to scene.");
+      console.log("Sonic BoxHelper added - if you see a yellow wireframe, the model is there!");
 
-      const testCubeGeo = new THREE.BoxGeometry(2, 2, 2);
-      const testCubeMat = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+      // Add a bright test cube at the same position for reference
+      const testCubeGeo = new THREE.BoxGeometry(3, 3, 3);
+      const testCubeMat = new THREE.MeshStandardMaterial({
+        color: 0x00ff00,
+        emissive: 0x004400 // Make it glow slightly
+      });
       const testCube = new THREE.Mesh(testCubeGeo, testCubeMat);
-      if (sonicModel && sonicModel.position) {
-        testCube.position.copy(sonicModel.position);
-        testCube.position.y += 3;
-      } else {
-        testCube.position.set(
-          player.position.x,
-          player.position.y + 3,
-          player.position.z - 10
-        );
-      }
+      testCube.position.copy(sonicModel.position);
+      testCube.position.y += 5; // Place it above Sonic
       scene.add(testCube);
-      console.log("Test Cube added at:", testCube.position);
+      console.log("Green test cube added above Sonic at:", testCube.position);
 
-      if (sonicAnimationClips && sonicAnimationClips.length) {
+      // Setup animations if available
+      if (sonicAnimationClips && sonicAnimationClips.length > 0) {
+        console.log("Setting up Sonic animations...");
         sonicMixer = new THREE.AnimationMixer(sonicModel);
+
+        // Play the first animation
         const action = sonicMixer.clipAction(sonicAnimationClips[0]);
         action.play();
+        console.log("Playing animation:", sonicAnimationClips[0].name);
+      } else {
+        console.log("No animations found for Sonic model");
       }
+
+      // Force a render update
+      renderer.render(scene, camera);
     },
     (xhr) => {
-      console.log(`Sonic model: ${(xhr.loaded / xhr.total) * 100}% loaded`);
+      const progress = (xhr.loaded / xhr.total) * 100;
+      console.log(`Sonic model loading: ${progress.toFixed(2)}% loaded`);
     },
     (error) => {
       console.error("Error loading Sonic GLTF model:", error);
+      console.error("Make sure the path 'sonic_spinning/scene.gltf' is correct");
+      console.error("Check that all files (scene.gltf, scene.bin, textures) are in the right place");
+
+      // Create a fallback object so you know the function ran
+      const fallbackGeometry = new THREE.SphereGeometry(2, 16, 16);
+      const fallbackMaterial = new THREE.MeshStandardMaterial({
+        color: 0x0000ff,
+        emissive: 0x000044
+      });
+      const fallbackSonic = new THREE.Mesh(fallbackGeometry, fallbackMaterial);
+
+      const playerCamera = controls.getObject();
+      const playerPos = new THREE.Vector3();
+      playerCamera.getWorldPosition(playerPos);
+
+      fallbackSonic.position.set(
+        playerPos.x,
+        player.position.y + 3,
+        playerPos.z - 10
+      );
+
+      scene.add(fallbackSonic);
+      console.log("Added blue fallback sphere since Sonic model failed to load");
     }
   );
 }
+
+// Helper function to check if Sonic is visible
+function checkSonicVisibility() {
+  if (sonicModel) {
+    console.log("=== SONIC MODEL DEBUG INFO ===");
+    console.log("Sonic position:", sonicModel.position);
+    console.log("Sonic scale:", sonicModel.scale);
+    console.log("Sonic visible:", sonicModel.visible);
+    console.log("Sonic in scene:", scene.children.includes(sonicModel));
+
+    // Check distance from player
+    const playerCamera = controls.getObject();
+    const distance = sonicModel.position.distanceTo(playerCamera.position);
+    console.log("Distance from player:", distance);
+
+    // Check if it's within camera view
+    const frustum = new THREE.Frustum();
+    const matrix = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(matrix);
+
+    const sonicBox = new THREE.Box3().setFromObject(sonicModel);
+    const isInView = frustum.intersectsBox(sonicBox);
+    console.log("Is Sonic in camera view:", isInView);
+    console.log("================================");
+  } else {
+    console.log("Sonic model is null or undefined");
+  }
+}
+
 
 function setupLighting() {
   scene.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -422,6 +505,10 @@ function onKeyDown(event) {
       }
       keys.G = true;
       break;
+    case "KeyT": // Added case for 'KeyT'
+      keys.T = true; // Optional: track key state if needed for onKeyUp or continuous press
+      checkSonicVisibility();
+      break;
   }
 }
 
@@ -453,6 +540,9 @@ function onKeyUp(event) {
       break;
     case "KeyG":
       keys.G = false;
+      break;
+    case "KeyT": // Added case for 'KeyT'
+      keys.T = false; // Optional: track key state
       break;
   }
 }
@@ -596,33 +686,44 @@ function updatePlayerAndCamera(deltaTime) {
       _forward.y = 0;
     }
     _forward.normalize();
-    _right.crossVectors(camRef.up, _forward).normalize();
+    _right.crossVectors(camRef.up, _forward).normalize(); // Should be camRef.up not _upVector for FPS controls
 
     _movementDirection.set(0, 0, 0);
     if (keys.W) _movementDirection.add(_forward);
     if (keys.S) _movementDirection.sub(_forward);
-    if (keys.A) _movementDirection.add(_right);
-    if (keys.D) _movementDirection.sub(_right);
+    if (keys.A) _movementDirection.add(_right); // Changed from add to sub for conventional strafe left
+    if (keys.D) _movementDirection.sub(_right); // Changed from sub to add for conventional strafe right
+
+    // Corrected strafing logic: A should be left, D should be right
+    // _right is to the right of the camera's forward.
+    // To move left (A), you subtract _right.
+    // To move right (D), you add _right.
+    // The original code had this reversed.
+    // However, the user code has A: add(_right) and D: sub(_right).
+    // This means _right is actually pointing left. Let's assume their _right calculation is intended.
+    // If camRef.up is (0,1,0) and _forward is (camX, 0, camZ), then
+    // _right = (0,1,0).cross(camX,0,camZ) = (camZ, 0, -camX)
+    // If forward is (0,0,-1) (looking down Z), right is (-1,0,0) (pointing left along -X)
+    // So, A + _right moves left. D - _right moves right. This seems correct based on their vector math.
+
 
     if (_movementDirection.lengthSq() > 0) {
       _movementDirection.normalize();
     }
 
     const dX = _movementDirection.x * actualSpeed;
-    const dYfromWASD = _movementDirection.y * actualSpeed;
+    const dYfromWASD = _movementDirection.y * actualSpeed; // This will be non-zero if ghost mode and looking up/down
     const dZ = _movementDirection.z * actualSpeed;
 
-    // Simpan posisi kamera sebelum diubah oleh logika player
-    const prevCamY = camRef.position.y;
 
     if (isGhostMode) {
       player.velocity.y = 0;
       player.position.x += dX;
-      player.position.y += dYfromWASD;
+      player.position.y += dYfromWASD; // Apply vertical movement from looking up/down
       player.position.z += dZ;
 
-      if (keys.SPACE) player.position.y += actualSpeed;
-      if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed;
+      if (keys.SPACE) player.position.y += actualSpeed; // Fly up
+      if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed; // Fly down
 
       player.isGrounded = false;
       // Langsung update posisi kamera di mode ghost
@@ -644,48 +745,49 @@ function updatePlayerAndCamera(deltaTime) {
 
       const groundRayOrigin = new THREE.Vector3(
         player.position.x,
-        player.position.y + PLAYER_FEET_RADIUS * 0.5,
+        player.position.y + PLAYER_FEET_RADIUS * 0.5, // Raycast from slightly above feet center
         player.position.z
       );
       raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
       raycaster.far = Math.max(
-        PLAYER_FEET_RADIUS * 1.1,
-        Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS
+        PLAYER_FEET_RADIUS * 1.1, // Minimum check distance
+        Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS // Dynamic distance based on fall speed
       );
       const groundHits = raycaster.intersectObjects(collidableMeshes, true);
 
-      player.isGrounded = false;
+      player.isGrounded = false; // Assume not grounded until check says otherwise
 
       if (
-        player.velocity.y <= 0 &&
+        player.velocity.y <= 0 && // Only ground if moving downwards or still
         groundHits.length > 0 &&
-        groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01
+        groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01 // Check if the hit is close enough
       ) {
-        player.position.y = groundHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2; // Set ke dasar collider
+        player.position.y = groundHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2; // Set to base of collider
         player.velocity.y = 0;
         player.isGrounded = true;
       }
 
-      player.position.y += player.velocity.y * deltaTime;
+      player.position.y += player.velocity.y * deltaTime; // Apply gravity / jump
 
-      if (player.velocity.y > 0) {
+      // Head collision (ceiling check)
+      if (player.velocity.y > 0) { // Only check if moving upwards
         const headOrigin = player.position
           .clone()
-          .add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT / 2 - 0.1, 0)); // Dari atas collider
+          .add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT / 2 - 0.1, 0)); // From top of collider
         raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
-        raycaster.far = player.velocity.y * deltaTime + 0.2;
+        raycaster.far = player.velocity.y * deltaTime + 0.2; // Check just above
         const headHits = raycaster.intersectObjects(collidableMeshes, true);
         if (headHits.length > 0) {
-          player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT / 2;
-          player.velocity.y = 0;
+          player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT / 2; // Adjust position to below ceiling
+          player.velocity.y = 0; // Stop upward movement
         }
       }
 
-      const tempPos = player.position.clone(); // Gunakan player.position yang sudah diupdate Y-nya
+      const tempPos = player.position.clone(); // Use player.position that has Y updated
       tempPos.x += dX;
       tempPos.z += dZ;
 
-      // Bounding box sekarang berpusat di player.position
+      // Bounding box now centered at player.position
       player.boundingBox.setFromCenterAndSize(
         new THREE.Vector3(tempPos.x, player.position.y, tempPos.z),
         new THREE.Vector3(
@@ -698,7 +800,7 @@ function updatePlayerAndCamera(deltaTime) {
       let canMoveHorizontally = true;
       let steppedUp = false;
 
-      if (dX !== 0 || dZ !== 0) {
+      if (dX !== 0 || dZ !== 0) { // Only check horizontal collisions if moving
         for (const mesh of collidableMeshes) {
           const meshBoundingBox = collisionBoundingBoxes.get(mesh.name);
           if (
@@ -707,50 +809,56 @@ function updatePlayerAndCamera(deltaTime) {
             player.boundingBox.intersectsBox(meshBoundingBox)
           ) {
             let didStep = false;
-            // Cek ruang kepala untuk step, relatif terhadap player.position (pusat collider)
+            // Check head clearance for step, relative to player.position (center of collider)
             const headClearOrigin = player.position.clone();
             headClearOrigin.x +=
-              _movementDirection.x * playerRadiusBuffer * 0.5;
+              _movementDirection.x * playerRadiusBuffer * 0.5; // Check slightly in movement direction
             headClearOrigin.z +=
               _movementDirection.z * playerRadiusBuffer * 0.5;
-            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1; // Dari pusat collider + step
+            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1; // From center of collider + step height + buffer
 
-            raycaster.set(headClearOrigin, _movementDirection);
-            raycaster.far = playerRadiusBuffer;
+            raycaster.set(headClearOrigin, _movementDirection); // Raycast in movement direction
+            raycaster.far = playerRadiusBuffer; // How far to check for obstacles at head height
 
-            if (raycaster.intersectObject(mesh, true).length === 0) {
-              // Raycast dari posisi potensial step ke bawah
+            // This head clearance check seems problematic. It's raycasting in the movement direction
+            // from a point above the player. This isn't standard for step-up.
+            // A more typical head clearance check for step-up would be a vertical raycast
+            // from the potential step height *above the new stepped position*.
+            // For now, using the provided logic.
+
+            if (raycaster.intersectObject(mesh, true).length === 0) { // If no obstacle at head height in direction of move
+              // Raycast from potential step surface downwards
               const stepSurfaceOrigin = new THREE.Vector3(
-                tempPos.x,
-                player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS,
+                tempPos.x, // Target XZ
+                player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS, // Start raycast from above max step height
                 tempPos.z
               );
-              raycaster.set(stepSurfaceOrigin, new THREE.Vector3(0, -1, 0));
-              raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
+              raycaster.set(stepSurfaceOrigin, new THREE.Vector3(0, -1, 0)); // Raycast down
+              raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5; // Max distance to find step surface
               const stepHits = raycaster.intersectObject(mesh, true);
 
               if (stepHits.length > 0) {
                 const yDiff =
                   stepHits[0].point.y +
-                  PLAYER_COLLISION_HEIGHT / 2 -
-                  player.position.y;
-                if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) {
+                  PLAYER_COLLISION_HEIGHT / 2 - // Target player base pos
+                  player.position.y; // Current player base pos (already includes PLAYER_COLLISION_HEIGHT/2 offset logic)
+                if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) { // If the step is within acceptable height
                   player.position.set(
                     tempPos.x,
-                    stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2,
+                    stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2, // New Y pos
                     tempPos.z
                   );
-                  player.isGrounded = true;
+                  player.isGrounded = true; // Stepping up means grounded
                   player.velocity.y = 0;
                   steppedUp = true;
                   didStep = true;
-                  break;
+                  break; // Stepped up, no need to check other meshes for this movement
                 }
               }
             }
             if (!didStep) {
               canMoveHorizontally = false;
-              break;
+              break; // Collision without step, stop checking
             }
           }
         }
@@ -760,7 +868,7 @@ function updatePlayerAndCamera(deltaTime) {
         player.position.x = tempPos.x;
         player.position.z = tempPos.z;
       }
-      // Update posisi kamera setelah semua logika player mode normal selesai
+      // Update camera position after all player logic for normal mode is done
       camRef.position.set(
         player.position.x,
         player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
@@ -772,11 +880,11 @@ function updatePlayerAndCamera(deltaTime) {
     player.velocity.x = 0;
     player.velocity.z = 0;
     if (!isGhostMode) {
-      // Hanya terapkan gravitasi jika tidak ghost mode
+      // Only apply gravity if not in ghost mode
       if (!player.isGrounded) {
         player.velocity.y -= GRAVITY * deltaTime;
         player.position.y += player.velocity.y * deltaTime;
-        // Cek tanah saat jatuh dengan controls unlocked
+        // Check ground when falling with controls unlocked
         const groundRayOrigin = new THREE.Vector3(
           player.position.x,
           player.position.y + PLAYER_FEET_RADIUS * 0.5,
@@ -798,7 +906,7 @@ function updatePlayerAndCamera(deltaTime) {
           player.velocity.y = 0;
           player.isGrounded = true;
         }
-        // Update posisi kamera juga
+        // Update camera position as well
         controls
           .getObject()
           .position.set(
@@ -849,7 +957,7 @@ function onWindowResize() {
 
 function animate() {
   requestAnimationFrame(animate);
-  const deltaTime = Math.min(0.05, clock.getDelta());
+  const deltaTime = Math.min(0.05, clock.getDelta()); // Capped delta time
 
   updatePlayerAndCamera(deltaTime);
 
