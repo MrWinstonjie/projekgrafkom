@@ -1,591 +1,437 @@
-<!DOCTYPE html>
-<html lang="en">
+--- START OF FILE main.js ---
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EDGEHOG ISLAND LABOLATORY - FPS with Jump & Gravity & Interaction</title>
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden;
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
+
+let scene, camera, renderer, model, controls;
+const clock = new THREE.Clock();
+
+let sonicModel, sonicMixer, sonicAnimationClips, sonicBoundingBoxHelper;
+const SONIC_MODEL_PATH = "sonic_spinning/scene.gltf";
+const SONIC_SCALE_IN_LAB = 800.0; // SESUAIKAN NILAI INI SAMPAI UKURAN SONIC PAS
+const SONIC_INITIAL_POSITION = new THREE.Vector3(20, 10, -30); // <-- GANTI DENGAN KOORDINAT TARGET ANDA (X, Y, Z) const
+    keys={ W: false, A: false, S: false, D: false, SHIFT_LEFT: false, SPACE: false, E_INTERACT: false, G: false,
+    Q_GHOST_DOWN: false, T: false, }; let isGhostMode=false; const GHOST_MODE_SPEED_MULTIPLIER=2.0; const
+    PLAYER_EYE_HEIGHT=10.5; const PLAYER_COLLISION_HEIGHT=1.8; const GRAVITY=20.0; const JUMP_IMPULSE=8.0; const
+    MAX_STEP_HEIGHT=0.6; const playerRadiusBuffer=4.0; const PLAYER_FEET_RADIUS=playerRadiusBuffer * 0.8; const
+    INTERACTION_DISTANCE=15.0; let player={ position: new THREE.Vector3(), velocity: new THREE.Vector3(), isGrounded:
+    false, canJump: true, boundingBox: new THREE.Box3(), }; let object3Mesh, originalObject3Material,
+    glowingObject3Material; let isObject3On=false; const OBJECT3_NAME="Object_3" ; const raycaster=new
+    THREE.Raycaster(); const interactionRaycaster=new THREE.Raycaster(); const collidableMeshes=[]; const
+    collidableObjectNames=[ "Object_13108" , "Object_13105" , "Object_22" , "Object_23" , "Object_14" , "Object_15"
+    , "Object_16" , "Object_18" , "Object_6" , "Object_20" , "Object_25" , "Object_24" , ]; const
+    interactiveObjectNames=[ "Object_13108" , "Object_23" , "Object_18" , "Object_23025" , ]; const
+    collisionBoundingBoxes=new Map(); const blocker=document.getElementById("blocker"); const
+    instructions=document.getElementById("instructions"); const _worldDirection=new THREE.Vector3(); const
+    _movementDirection=new THREE.Vector3(); const _upVector=new THREE.Vector3(0, 1, 0); const _forward=new
+    THREE.Vector3(); const _right=new THREE.Vector3(); let tvScreenMesh, steamObject; let isTVOn=false; let
+    originalTVMaterial, staticTVMaterial, staticTexture; let isSteamActive=false; let steamAnimationTime=0; const
+    STEAM_LOOP_DURATION=2.0; const STEAM_MAX_HEIGHT_OFFSET=10.0; let originalSteamPosition, originalSteamOpacity; let
+    paperMesh, paperPrintTexture, originalPaperMaterial, paperPrintMaterial; let isPaperTextureVisible=false; let
+    paperAnimationActive=false; let paperAnimationTime=0; const PAPER_ANIMATION_DURATION=1.0; let paperTargetOpacity=0,
+    paperCurrentOpacity=0; function init() { console.log("Init function started."); scene=new THREE.Scene();
+    scene.background=new THREE.Color(0x87ceeb); camera=new THREE.PerspectiveCamera(75, window.innerWidth /
+    window.innerHeight, 0.1, 20000); renderer=new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.0;
+    document.body.appendChild(renderer.domElement); controls=new PointerLockControls(camera, document.body); if
+    (instructions) instructions.addEventListener("click", ()=> controls.lock());
+    controls.addEventListener("lock", () => {
+    if (instructions) instructions.style.display = "none";
+    if (blocker) blocker.style.display = "none";
+    const controlsHelp = document.getElementById("controls-help");
+    if (controlsHelp) controlsHelp.style.display = "block";
+    });
+    controls.addEventListener("unlock", () => {
+    if (blocker) blocker.style.display = "flex";
+    if (instructions) instructions.style.display = "";
+    const controlsHelp = document.getElementById("controls-help");
+    if (controlsHelp) controlsHelp.style.display = "none";
+    });
+    const controlsHelp = document.getElementById("controls-help");
+    if (controlsHelp) controlsHelp.style.display = "none";
+
+    setupLighting();
+
+    const textureLoader = new THREE.TextureLoader();
+    staticTexture = textureLoader.load("television.jpeg", (texture) => {
+    texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
+    staticTVMaterial = new THREE.MeshStandardMaterial({ map: staticTexture, emissiveMap: staticTexture, emissive:
+    0xffffff, emissiveIntensity: 0.5 });
+    }, undefined, (error) => {
+    console.error("Error loading static screen texture:", error);
+    staticTVMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, emissive: 0x333333, emissiveIntensity: 1 });
+    });
+
+    paperPrintTexture = textureLoader.load("kertasprint.jpeg", (texture) => {
+    texture.wrapS = THREE.ClampToEdgeWrapping; texture.wrapT = THREE.ClampToEdgeWrapping;
+    paperPrintMaterial = new THREE.MeshStandardMaterial({ map: paperPrintTexture, roughness: 0.8, metalness: 0.1,
+    transparent: true, opacity: 0 });
+    }, undefined, (error) => {
+    console.error("ERROR loading 'kertasprint.jpeg':", error);
+    paperPrintMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.1, transparent:
+    true, opacity: 0 });
+    });
+
+    const labLoader = new GLTFLoader();
+    labLoader.load("EDGEHOG ISLAND LABOLATORY.glb", (gltf) => {
+    console.log("Main lab model GLTF loaded.");
+    model = gltf.scene;
+    model.traverse((child) => {
+    if (child.isMesh) {
+    child.castShadow = true; child.receiveShadow = true;
+    if (collidableObjectNames.includes(child.name)) {
+    collidableMeshes.push(child);
+    collisionBoundingBoxes.set(child.name, new THREE.Box3().setFromObject(child));
+    }
+    if (child.name === "Object_23045") {
+    paperMesh = child;
+    originalPaperMaterial = paperMesh.material ? paperMesh.material.clone() : new THREE.MeshStandardMaterial({ color:
+    0xffffff, roughness: 0.8, metalness: 0.1 });
+    }
+    }
+    });
+
+    object3Mesh = model.getObjectByName(OBJECT3_NAME);
+    if (object3Mesh && object3Mesh.isMesh) {
+    originalObject3Material = object3Mesh.material ? object3Mesh.material.clone() : new THREE.MeshStandardMaterial({
+    color: 0x888888 });
+    if (!object3Mesh.material) object3Mesh.material = originalObject3Material.clone();
+    glowingObject3Material = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffff00, emissiveIntensity:
+    1.0 });
+    } else console.warn(`${OBJECT3_NAME} not found or is not a mesh.`);
+
+    tvScreenMesh = model.getObjectByName("Object_13105");
+    if (tvScreenMesh && tvScreenMesh.isMesh && tvScreenMesh.material) originalTVMaterial =
+    tvScreenMesh.material.clone();
+
+    steamObject = model.getObjectByName("Object_17");
+    if (steamObject && steamObject.isMesh) {
+    originalSteamPosition = steamObject.position.clone();
+    if (steamObject.material) {
+    steamObject.material.transparent = true;
+    originalSteamOpacity = steamObject.material.opacity;
+    steamObject.visible = false;
+    }
+    }
+
+    model.scale.set(0.05, 0.05, 0.05);
+    scene.add(model);
+
+    const targetObjectName = "Object_6";
+    let targetObject = model.getObjectByName(targetObjectName);
+    if (targetObject) {
+    const boundingBox = new THREE.Box3().setFromObject(targetObject);
+    targetObject.getWorldPosition(player.position);
+    player.position.y = boundingBox.max.y;
+    } else player.position.set(0, PLAYER_COLLISION_HEIGHT / 2, 5);
+    console.log("Player initial position:", player.position);
+    player.isGrounded = true;
+
+    controls.getObject().position.set(
+    player.position.x,
+    player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
+    player.position.z
+    );
+    console.log("Initial Camera world position:", controls.getObject().position);
+
+    controls.getObject().updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    console.log("DEBUG: Camera matrix world updated before Sonic load.");
+
+    player.boundingBox.setFromCenterAndSize(player.position, new THREE.Vector3(playerRadiusBuffer * 2,
+    PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2));
+
+    loadSonicModel();
+
+    animate();
+    }, (xhr) => console.log(`Main Lab Model: ${(xhr.loaded / xhr.total) * 100}% loaded`),
+    (error) => console.error("Main Lab GLTF Loading Error:", error)
+    );
+
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
+    window.addEventListener("resize", onWindowResize, false);
+    console.log("Init function finished.");
+    }
+
+    function setupLighting() {
+    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 3.0);
+    dirLight.position.set(40, 60, 35);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far = 200;
+    dirLight.shadow.bias = -0.0005;
+    scene.add(dirLight);
+    }
+
+    function loadSonicModel() {
+    if (!SONIC_MODEL_PATH) {
+    console.warn("Sonic model path is not defined.");
+    return;
+    }
+    const loader = new GLTFLoader();
+    loader.load(
+    SONIC_MODEL_PATH,
+    (gltf) => {
+    console.log("DEBUG: GLTF Sonic loaded successfully into gltf object.");
+    sonicModel = gltf.scene;
+    if (!sonicModel) {
+    console.error("CRITICAL DEBUG: sonicModel is undefined after GLTF load!");
+    return;
+    }
+    sonicModel.name = "SonicTheHedgehog_Main";
+
+    sonicModel.scale.set(SONIC_SCALE_IN_LAB, SONIC_SCALE_IN_LAB, SONIC_SCALE_IN_LAB);
+    console.log(`DEBUG: Sonic scaled using SONIC_SCALE_IN_LAB: ${SONIC_SCALE_IN_LAB}`);
+
+    if (SONIC_INITIAL_POSITION) {
+    sonicModel.position.copy(SONIC_INITIAL_POSITION);
+    console.log("DEBUG: Sonic world position set to SONIC_INITIAL_POSITION:", sonicModel.position);
+    } else {
+    sonicModel.position.set(0, SONIC_SCALE_IN_LAB * 0.1, 0);
+    console.warn("DEBUG: SONIC_INITIAL_POSITION not defined, placing Sonic at a default world origin position.");
+    }
+
+    sonicModel.traverse((child) => {
+    if (child.isMesh) {
+    child.castShadow = true;
+    child.visible = true;
+    if (child.material) {
+    const applyChanges = (material) => {
+    if (material.map) material.map.colorSpace = THREE.SRGBColorSpace;
+    if (material.emissiveMap) material.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+    if (material.transparent && material.opacity < 0.1) material.opacity=1.0; material.needsUpdate=true; }; if
+        (Array.isArray(child.material)) child.material.forEach(applyChanges); else applyChanges(child.material); } } });
+        if (scene) { scene.add(sonicModel); console.log("DEBUG: sonicModel was added to scene."); } else {
+        console.error("CRITICAL DEBUG: Scene is undefined when trying to add sonicModel!"); return; }
+        sonicModel.updateMatrixWorld(true); const sonicBox=new THREE.Box3().setFromObject(sonicModel); if
+        (!sonicBox.isEmpty()) { if (sonicBoundingBoxHelper) { scene.remove(sonicBoundingBoxHelper);
+        sonicBoundingBoxHelper.dispose(); } sonicBoundingBoxHelper=new THREE.Box3Helper(sonicBox, 0x00ff00); // Hijau if
+        (scene) { scene.add(sonicBoundingBoxHelper); console.log("DEBUG: sonicBoundingBoxHelper was added to scene."); }
+        else { console.error("CRITICAL DEBUG: Scene is undefined when trying to add sonicBoundingBoxHelper!"); } const
+        size=new THREE.Vector3(); sonicBox.getSize(size); console.log("DEBUG: Sonic's bounding box world size:", size);
+        const center=new THREE.Vector3(); sonicBox.getCenter(center); console.log("DEBUG: Sonic's bounding box world
+        center:", center); } else { console.error("CRITICAL DEBUG: Sonic's bounding box is EMPTY after loading and
+        scaling!"); } sonicAnimationClips=gltf.animations; if (sonicAnimationClips && sonicAnimationClips.length) {
+        sonicMixer=new THREE.AnimationMixer(sonicModel); let defaultAnim=sonicAnimationClips.find(clip=>
+        clip.name.toLowerCase().includes('spin')) ||
+        sonicAnimationClips.find(clip => clip.name.toLowerCase().includes('idle')) ||
+        sonicAnimationClips[0];
+        if (defaultAnim) {
+        sonicMixer.clipAction(defaultAnim).play();
+        console.log(`Playing Sonic animation: ${defaultAnim.name}`);
         }
-
-        canvas {
-            display: block;
-        }
-
-        #controls-help {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            padding: 10px 15px;
-            background-color: rgba(0, 0, 0, 0.75);
-            color: white;
-            font-family: sans-serif;
-            border-radius: 8px;
-            z-index: 100;
-            font-size: 14px;
-            line-height: 1.6;
-            max-width: 250px;
-        }
-
-        #controls-help h3 {
-            margin-top: 0;
-            margin-bottom: 8px;
-            font-size: 16px;
-            border-bottom: 1px solid #555;
-            padding-bottom: 5px;
-        }
-
-        #controls-help p {
-            margin: 4px 0;
-        }
-
-        #controls-help kbd {
-            background-color: #333;
-            border: 1px solid #555;
-            color: #eee;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: monospace;
-            font-size: 13px;
-        }
-
-        #blocker {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            font-size: 24px;
-            text-align: center;
-            z-index: 200;
-        }
-
-        #instructions {
-            width: 50%;
-            cursor: pointer;
-        }
-    </style>
-</head>
-
-<body>
-    <div id="blocker">
-        <div id="instructions">
-            <p style="font-size:36px">Click to play</p>
-            <p>
-                W, A, S, D: Move<br />
-                Shift: Sprint<br />
-                Space: Jump<br />
-                E: Interact<br />
-                Mouse: Look around
-            </p>
-        </div>
-    </div>
-
-    <div id="controls-help">
-        <h3>Petunjuk Kontrol</h3>
-        <p><kbd>W</kbd> - Maju</p>
-        <p><kbd>A</kbd> - Kiri (Strafe)</p>
-        <p><kbd>S</kbd> - Mundur</p>
-        <p><kbd>D</kbd> - Kanan (Strafe)</p>
-        <p><kbd>Shift Kiri</kbd> - Sprint</p>
-        <p><kbd>Space</kbd> - Lompat</p>
-        <p><kbd>E</kbd> - Interaksi</p>
-        <p><strong>Mouse</strong> - Lihat Sekeliling (Klik layar untuk mengaktifkan)</p>
-    </div>
-
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
-            }
-        }
-    </script>
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-
-        let scene, camera, renderer, model, controls;
-        const clock = new THREE.Clock();
-
-        const keys = {
-            W: false, A: false, S: false, D: false,
-            SHIFT_LEFT: false,
-            SPACE: false,
-            E: false // Ditambahkan untuk interaksi
-        };
-
-        // Konstanta Fisika dan Player
-        const PLAYER_EYE_HEIGHT = 10.5;
-        const PLAYER_COLLISION_HEIGHT = 1.8;
-        const GRAVITY = 5.0;
-        const JUMP_IMPULSE = 3.5;
-        const MAX_STEP_HEIGHT = 0.6;
-        const playerRadiusBuffer = 4.0;
-        const PLAYER_FEET_RADIUS = playerRadiusBuffer * 0.8;
-        const INTERACTION_DISTANCE = 15.0; // Jarak pemain bisa berinteraksi dengan objek
-
-        let player = {
-            position: new THREE.Vector3(),
-            velocity: new THREE.Vector3(),
-            isGrounded: false,
-            canJump: true,
-            boundingBox: new THREE.Box3()
-        };
-
-        const raycaster = new THREE.Raycaster(); // Raycaster utama untuk fisika
-        const interactionRaycaster = new THREE.Raycaster(); // Raycaster khusus untuk interaksi
-        const collidableMeshes = [];
-        const collidableObjectNames = [
-            'Object_13', 'Object_22', 'Object_23', 'Object_14',
-            'Object_15', 'Object_16', 'Object_18',
-            'Object_6', 'Object_20', 'Object_25', 'Object_24'
-        ];
-        const interactiveObjectNames = ['Object_13', 'Object_23', 'Object_18'];
-        const collisionBoundingBoxes = new Map();
-
-        const blocker = document.getElementById('blocker');
-        const instructions = document.getElementById('instructions');
-
-        const _worldDirection = new THREE.Vector3();
-        const _movementDirection = new THREE.Vector3();
-        const _forward = new THREE.Vector3();
-        const _right = new THREE.Vector3();
-
-        // Variabel untuk interaksi
-        let tvObject, paperObject, steamObject, steamTriggerObject;
-        let isTVOn = false;
-        let originalTVMaterial;
-        let tvScreenMesh; // Mesh spesifik dari layar TV jika Object_13 adalah grup
-
-        let isPaperAnimating = false;
-        let paperAnimationTime = 0;
-        const PAPER_ANIMATION_DURATION = 0.5; // Durasi animasi kertas (detik)
-        let originalPaperRotation;
-
-        let isSteamAnimating = false;
-        let steamAnimationTime = 0;
-        const STEAM_ANIMATION_DURATION = 3.0; // Durasi animasi uap (detik)
-        let originalSteamPosition;
-        let originalSteamOpacity;
-
-
-        function init() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB);
-
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.0;
-            document.body.appendChild(renderer.domElement);
-
-            controls = new PointerLockControls(camera, document.body);
-
-            instructions.addEventListener('click', function () {
-                controls.lock();
-            });
-            controls.addEventListener('lock', function () {
-                instructions.style.display = 'none';
-                blocker.style.display = 'none';
-                document.getElementById('controls-help').style.display = 'block';
-            });
-            controls.addEventListener('unlock', function () {
-                blocker.style.display = 'flex';
-                instructions.style.display = '';
-                document.getElementById('controls-help').style.display = 'none';
-            });
-            document.getElementById('controls-help').style.display = 'none';
-
-            setupLighting();
-
-            const loader = new GLTFLoader();
-            loader.load(
-                'EDGEHOG ISLAND LABOLATORY.glb',
-                function (gltf) {
-                    model = gltf.scene;
-                    model.traverse((child) => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                            if (collidableObjectNames.includes(child.name)) {
-                                collidableMeshes.push(child);
-                                const boundingBox = new THREE.Box3().setFromObject(child);
-                                collisionBoundingBoxes.set(child.name, boundingBox);
-                            }
-
-                            // Simpan referensi ke objek interaktif
-                            if (child.name === 'Object_13') { // TV
-                                tvObject = child;
-                                // Asumsi layar adalah child pertama atau cari berdasarkan nama jika ada
-                                tvScreenMesh = tvObject; // Default ke objek utama, bisa disesuaikan
-                                if (tvObject.material) {
-                                    originalTVMaterial = tvObject.material.clone();
-                                } else if (tvObject.children.length > 0 && tvObject.children[0].isMesh) {
-                                    // Jika Object_13 adalah grup, coba cari mesh layar
-                                    // Anda mungkin perlu menyesuaikan ini berdasarkan struktur model Anda
-                                    tvScreenMesh = tvObject.children.find(c => c.isMesh && (c.name.includes('Screen') || c.name.includes('Layar'))) || tvObject.children[0];
-                                    if (tvScreenMesh && tvScreenMesh.material) {
-                                        originalTVMaterial = tvScreenMesh.material.clone();
-                                    }
-                                }
-                            } else if (child.name === 'Object_23') { // Kertas
-                                paperObject = child;
-                                originalPaperRotation = paperObject.rotation.clone();
-                            } else if (child.name === 'Object_17') { // Uap
-                                steamObject = child;
-                                originalSteamPosition = steamObject.position.clone();
-                                if (steamObject.material) {
-                                    steamObject.material.transparent = true; // Pastikan material bisa transparan
-                                    originalSteamOpacity = steamObject.material.opacity;
-                                }
-                            } else if (child.name === 'Object_18') { // Pemicu Uap
-                                steamTriggerObject = child;
-                            }
-                        }
-                    });
-                    model.scale.set(0.05, 0.05, 0.05);
-                    scene.add(model);
-
-                    if (!tvScreenMesh) console.warn("TV Screen Mesh (Object_13 or its child) not found or has no material.");
-                    if (!paperObject) console.warn("Paper (Object_23) not found.");
-                    if (!steamObject) console.warn("Steam (Object_17) not found.");
-                    if (!steamTriggerObject) console.warn("Steam Trigger (Object_18) not found.");
-
-
-                    const targetObjectName = 'Object_6';
-                    let targetObject = model.getObjectByName(targetObjectName);
-                    if (targetObject) {
-                        const boundingBox = new THREE.Box3().setFromObject(targetObject);
-                        const objectWorldPosition = new THREE.Vector3();
-                        targetObject.getWorldPosition(objectWorldPosition);
-                        player.position.set(objectWorldPosition.x, boundingBox.max.y, objectWorldPosition.z);
-                        player.isGrounded = true;
-                    } else {
-                        player.position.set(0, 10, 5);
-                        player.isGrounded = false;
-                    }
-                    controls.getObject().position.set(player.position.x, player.position.y + PLAYER_EYE_HEIGHT, player.position.z);
-                    player.boundingBox.setFromCenterAndSize(
-                        new THREE.Vector3(player.position.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, player.position.z),
-                        new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
-                    );
-                    animate();
-                },
-                (xhr) => console.log((xhr.loaded / xhr.total * 100) + '% loaded'),
-                (error) => console.error('Error loading GLB model:', error)
-            );
-
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-            window.addEventListener('resize', onWindowResize, false);
-        }
-
-        function setupLighting() {
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-            scene.add(ambientLight);
-            const mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 3.5);
-            mainDirectionalLight.position.set(40, 50, 30);
-            mainDirectionalLight.castShadow = true;
-            mainDirectionalLight.shadow.mapSize.width = 2048;
-            mainDirectionalLight.shadow.mapSize.height = 2048;
-            mainDirectionalLight.shadow.camera.near = 0.5;
-            mainDirectionalLight.shadow.camera.far = 150;
-            // ... (batas shadow camera disesuaikan dengan scene)
-            mainDirectionalLight.shadow.bias = -0.0005; // Nilai bias yang lebih umum
-            scene.add(mainDirectionalLight);
+        } else console.log("Sonic model has no animations.");
+        },
+        (xhr) => console.log(`Sonic Model: ${(xhr.loaded / xhr.total) * 100}% loaded`),
+        (error) => console.error("CRITICAL DEBUG: Sonic GLTF Loading Error:", error)
+        );
         }
 
         function onKeyDown(event) {
-            switch (event.code) {
-                case 'KeyW': keys.W = true; break;
-                case 'KeyA': keys.A = true; break;
-                case 'KeyS': keys.S = true; break;
-                case 'KeyD': keys.D = true; break;
-                case 'ShiftLeft': keys.SHIFT_LEFT = true; break;
-                case 'Space': keys.SPACE = true; break;
-                case 'KeyE': // Tombol E ditekan
-                    if (controls.isLocked) {
-                        handleInteraction();
-                    }
-                    break;
-            }
+        switch (event.code) {
+        case "KeyW": keys.W = true; break; case "KeyA": keys.A = true; break;
+        case "KeyS": keys.S = true; break; case "KeyD": keys.D = true; break;
+        case "ShiftLeft": keys.SHIFT_LEFT = true; break; case "Space": keys.SPACE = true; break;
+        case "KeyE": keys.E_INTERACT = true; if (controls.isLocked) handleInteraction(); break;
+        case "KeyQ": if (isGhostMode) keys.Q_GHOST_DOWN = true; break;
+        case "KeyG":
+        if (!keys.G) {
+        isGhostMode = !isGhostMode; console.log("Ghost Mode:", isGhostMode ? "ON" : "OFF");
+        if (isGhostMode) player.velocity.y = 0;
+        } keys.G = true; break;
+        case "KeyT": keys.T = true; break;
         }
-
+        }
         function onKeyUp(event) {
-            switch (event.code) {
-                case 'KeyW': keys.W = false; break;
-                case 'KeyA': keys.A = false; break;
-                case 'KeyS': keys.S = false; break;
-                case 'KeyD': keys.D = false; break;
-                case 'ShiftLeft': keys.SHIFT_LEFT = false; break;
-                case 'Space': keys.SPACE = false; break;
-                // Tidak perlu keys.E = false karena interaksi terjadi sekali tekan
-            }
+        switch (event.code) {
+        case "KeyW": keys.W = false; break; case "KeyA": keys.A = false; break;
+        case "KeyS": keys.S = false; break; case "KeyD": keys.D = false; break;
+        case "ShiftLeft": keys.SHIFT_LEFT = false; break; case "Space": keys.SPACE = false; break;
+        case "KeyE": keys.E_INTERACT = false; break; case "KeyQ": keys.Q_GHOST_DOWN = false; break;
+        case "KeyG": keys.G = false; break; case "KeyT": keys.T = false; break;
+        }
         }
 
-        function handleInteraction() {
-            interactionRaycaster.setFromCamera({ x: 0, y: 0 }, camera); // Raycast dari tengah layar
-            const intersects = interactionRaycaster.intersectObjects(collidableMeshes, true); // Cek semua collidable, bisa difilter ke interactiveObjectMeshes
+        function startPaperAnimation(showTexture) {
+        if (!paperAnimationActive) {
+        paperAnimationActive = true;
+        paperAnimationTime = 0;
+        paperTargetOpacity = showTexture ? 1.0 : 0.0;
+        paperCurrentOpacity = showTexture ? 0.0 : 1.0;
 
-            if (intersects.length > 0) {
-                const intersectedObject = intersects[0].object;
-                const distance = intersects[0].distance;
-
-                if (distance < INTERACTION_DISTANCE) {
-                    // Cari parent teratas yang namanya ada di interactiveObjectNames
-                    let currentObject = intersectedObject;
-                    let interactiveParent = null;
-                    while (currentObject) {
-                        if (interactiveObjectNames.includes(currentObject.name)) {
-                            interactiveParent = currentObject;
-                            break;
-                        }
-                        if (!currentObject.parent) break;
-                        currentObject = currentObject.parent;
-                    }
-
-                    if (interactiveParent) {
-                        console.log("Interacting with:", interactiveParent.name);
-                        if (interactiveParent.name === 'Object_13' && tvScreenMesh && originalTVMaterial) { // TV
-                            isTVOn = !isTVOn;
-                            if (isTVOn) {
-                                tvScreenMesh.material = new THREE.MeshStandardMaterial({
-                                    color: 0xffffff,
-                                    emissive: 0x87cefa, // Warna biru muda menyala
-                                    emissiveIntensity: 1.5
-                                });
-                                console.log("TV turned ON");
-                            } else {
-                                tvScreenMesh.material = originalTVMaterial;
-                                console.log("TV turned OFF");
-                            }
-                        } else if (interactiveParent.name === 'Object_23' && paperObject && !isPaperAnimating) { // Kertas
-                            isPaperAnimating = true;
-                            paperAnimationTime = 0;
-                            console.log("Animating paper");
-                        } else if (interactiveParent.name === 'Object_18' && steamObject && !isSteamAnimating) { // Pemicu Uap
-                            isSteamAnimating = true;
-                            steamAnimationTime = 0;
-                            steamObject.position.copy(originalSteamPosition); // Pastikan posisi awal benar
-                            if (steamObject.material) steamObject.material.opacity = originalSteamOpacity;
-                            steamObject.visible = true;
-                            console.log("Animating steam");
-                        }
-                    }
-                }
-            }
+        if (showTexture && paperMesh && paperPrintMaterial) {
+        paperMesh.material = paperPrintMaterial;
+        if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity;
         }
-
-
-        function updatePlayerAndCamera(deltaTime) {
-            if (!controls.isLocked) {
-                player.velocity.x = 0;
-                player.velocity.z = 0;
-                return;
+        }
+        }
+        function updatePaperAnimation(deltaTime) {
+        if (paperAnimationActive) {
+        paperAnimationTime += deltaTime;
+        const progress = Math.min(paperAnimationTime / PAPER_ANIMATION_DURATION, 1.0);
+        const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+            paperCurrentOpacity=paperCurrentOpacity + (paperTargetOpacity - paperCurrentOpacity) * easeProgress; if
+            (paperMesh && paperPrintMaterial && paperMesh.material===paperPrintMaterial) { if (paperMesh.material)
+            paperMesh.material.opacity=paperCurrentOpacity; } if (progress>= 1.0) {
+            paperAnimationActive = false;
+            if (paperTargetOpacity === 0 && paperMesh && originalPaperMaterial) {
+            paperMesh.material = originalPaperMaterial;
             }
-
-            // ... (Logika pergerakan pemain, gravitasi, lompat, tabrakan tetap sama)
-            const cameraReference = controls.getObject();
-            const effectiveMoveSpeed = 8.0;
-            const sprintMultiplier = 1.5;
-            const actualSpeed = (keys.SHIFT_LEFT ? sprintMultiplier : 1) * effectiveMoveSpeed * deltaTime;
-
-            cameraReference.getWorldDirection(_forward);
-            _forward.y = 0;
-            _forward.normalize();
-            _right.crossVectors(cameraReference.up, _forward).normalize();
-
-            _movementDirection.set(0, 0, 0);
-            if (keys.W) _movementDirection.add(_forward);
-            if (keys.S) _movementDirection.sub(_forward);
-            if (keys.A) _movementDirection.add(_right);
-            if (keys.D) _movementDirection.sub(_right);
-
-            if (!player.isGrounded) {
-                player.velocity.y -= GRAVITY * deltaTime;
             }
+            }
+            }
+            function handleInteraction() {
+            interactionRaycaster.setFromCamera({ x: 0, y: 0 }, camera);
+            const interactableSceneObjects = [];
+            interactiveObjectNames.forEach((name) => {
+            const obj = model.getObjectByName(name);
+            if (obj) interactableSceneObjects.push(obj);
+            });
 
-            if (keys.SPACE && player.isGrounded && player.canJump) {
+            const actualInteractables = interactableSceneObjects.filter(
+            (obj) => obj.children.length > 0 || obj.isMesh
+            );
+
+            if (actualInteractables.length === 0) return;
+            const intersects = interactionRaycaster.intersectObjects(actualInteractables, true);
+
+            if (intersects.length > 0 && intersects[0].distance < INTERACTION_DISTANCE) { const
+                intersectedRawObject=intersects[0].object; let interactiveObjectName=intersectedRawObject.name; let
+                current=intersectedRawObject; while (current && !interactiveObjectNames.includes(current.name)) {
+                current=current.parent; if (current && current.isScene) { current=null; break; } } if (current)
+                interactiveObjectName=current.name; else if (interactiveObjectNames.includes(intersectedRawObject.name))
+                interactiveObjectName=intersectedRawObject.name; else return; console.log("Interacting with:",
+                interactiveObjectName); if (interactiveObjectName==="Object_13108" ) { if (tvScreenMesh &&
+                originalTVMaterial && staticTVMaterial) { isTVOn=!isTVOn; tvScreenMesh.material=isTVOn ?
+                staticTVMaterial : originalTVMaterial; console.log("TV Toggled:", isTVOn ? "ON" : "OFF" ); } if
+                (object3Mesh && originalObject3Material && glowingObject3Material) { isObject3On=!isObject3On;
+                object3Mesh.material=isObject3On ? glowingObject3Material : originalObject3Material;
+                console.log(`${OBJECT3_NAME} Toggled:`, isObject3On ? "GLOWING YELLOW" : "OFF" ); } } else if (
+                (interactiveObjectName==="Object_23" || interactiveObjectName==="Object_23025" ) && paperMesh &&
+                originalPaperMaterial && paperPrintMaterial && !paperAnimationActive ) {
+                isPaperTextureVisible=!isPaperTextureVisible; startPaperAnimation(isPaperTextureVisible); } else if
+                (interactiveObjectName==="Object_18" && steamObject) { isSteamActive=!isSteamActive; if (isSteamActive)
+                { steamAnimationTime=0; if (originalSteamPosition) steamObject.position.copy(originalSteamPosition); if
+                (steamObject.material) steamObject.material.opacity=originalSteamOpacity; steamObject.visible=true; }
+                else steamObject.visible=false; } } } function updatePlayerAndCamera(deltaTime) { if (controls.isLocked)
+                { const camRef=controls.getObject(); let baseSpeed=8.0; let currentSpeed=(keys.SHIFT_LEFT ? 1.5 : 1) *
+                baseSpeed; if (isGhostMode) currentSpeed *=GHOST_MODE_SPEED_MULTIPLIER; const actualSpeed=currentSpeed *
+                deltaTime; camRef.getWorldDirection(_forward); if (!isGhostMode) _forward.y=0; _forward.normalize();
+                _right.crossVectors(camRef.up, _forward).normalize(); _movementDirection.set(0, 0, 0); if (keys.W)
+                _movementDirection.add(_forward); if (keys.S) _movementDirection.sub(_forward); if (keys.A)
+                _movementDirection.add(_right); if (keys.D) _movementDirection.sub(_right); if
+                (_movementDirection.lengthSq()> 0) _movementDirection.normalize();
+
+                const dX = _movementDirection.x * actualSpeed;
+                const dYfromWASD = _movementDirection.y * actualSpeed;
+                const dZ = _movementDirection.z * actualSpeed;
+
+                if (isGhostMode) {
+                player.velocity.y = 0;
+                player.position.x += dX;
+                player.position.y += dYfromWASD;
+                player.position.z += dZ;
+                if (keys.SPACE) player.position.y += actualSpeed;
+                if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed;
+                player.isGrounded = false;
+                camRef.position.copy(player.position);
+                } else {
+                if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime;
+                if (keys.SPACE && player.isGrounded && player.canJump) {
                 player.velocity.y = JUMP_IMPULSE;
                 player.isGrounded = false;
                 player.canJump = false;
-            }
-            if (!keys.SPACE) {
-                player.canJump = true;
-            }
+                }
+                if (!keys.SPACE) player.canJump = true;
 
-            let intendedDeltaX = 0;
-            let intendedDeltaZ = 0;
-            if (_movementDirection.lengthSq() > 0) {
-                _movementDirection.normalize();
-                intendedDeltaX = _movementDirection.x * actualSpeed;
-                intendedDeltaZ = _movementDirection.z * actualSpeed;
-            }
-
-            const playerBaseY = player.position.y;
-            const groundRayOrigin = new THREE.Vector3(player.position.x, playerBaseY + PLAYER_FEET_RADIUS * 0.5, player.position.z);
-            const groundRayLength = Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS * 1.1;
-
-            raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
-            raycaster.far = groundRayLength;
-            const groundIntersects = raycaster.intersectObjects(collidableMeshes, true);
-            player.isGrounded = false;
-
-            if (player.velocity.y <= 0) {
-                if (groundIntersects.length > 0) {
-                    const closestGround = groundIntersects[0];
-                    if (closestGround.distance <= PLAYER_FEET_RADIUS * 1.0 + 0.01) {
-                        player.position.y = closestGround.point.y;
+                const groundRayOrigin = new THREE.Vector3(player.position.x, player.position.y + PLAYER_FEET_RADIUS *
+                0.5, player.position.z);
+                raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
+                raycaster.far = Math.max(PLAYER_FEET_RADIUS * 1.1, Math.abs(player.velocity.y * deltaTime) +
+                PLAYER_FEET_RADIUS);
+                const groundHits = raycaster.intersectObjects(collidableMeshes, true);
+                player.isGrounded = false;
+                if (player.velocity.y <= 0 && groundHits.length> 0 && groundHits[0].distance <= PLAYER_FEET_RADIUS *
+                        1.01) { player.position.y=groundHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2;
+                        player.velocity.y=0; player.isGrounded=true; } player.position.y +=player.velocity.y *
+                        deltaTime; if (player.velocity.y> 0) {
+                        const headOrigin = player.position.clone().add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT / 2
+                        - 0.1, 0));
+                        raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
+                        raycaster.far = player.velocity.y * deltaTime + 0.2;
+                        const headHits = raycaster.intersectObjects(collidableMeshes, true);
+                        if (headHits.length > 0) {
+                        player.position.y = headHits[0].point.y - PLAYER_COLLISION_HEIGHT / 2;
                         player.velocity.y = 0;
-                        player.isGrounded = true;
-                    }
-                }
-            }
+                        }
+                        }
 
-            if (!player.isGrounded) {
-                player.position.y += player.velocity.y * deltaTime;
-            }
-
-            if (player.velocity.y > 0) {
-                const headCheckOrigin = player.position.clone().add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT - 0.1, 0));
-                raycaster.set(headCheckOrigin, new THREE.Vector3(0, 1, 0));
-                raycaster.far = player.velocity.y * deltaTime + 0.2;
-                const headIntersects = raycaster.intersectObjects(collidableMeshes, true);
-                if (headIntersects.length > 0) {
-                    player.position.y = headIntersects[0].point.y - PLAYER_COLLISION_HEIGHT;
-                    player.velocity.y = 0;
-                }
-            }
-
-            const tempFuturePlayerPos = player.position.clone();
-            tempFuturePlayerPos.x += intendedDeltaX;
-            tempFuturePlayerPos.z += intendedDeltaZ;
-
-            player.boundingBox.setFromCenterAndSize(
-                new THREE.Vector3(tempFuturePlayerPos.x, player.position.y + PLAYER_COLLISION_HEIGHT / 2, tempFuturePlayerPos.z),
-                new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
-            );
-
-            let canMoveHorizontally = true;
-            let collisionResolvedByStepping = false;
-
-            if (intendedDeltaX !== 0 || intendedDeltaZ !== 0) {
-                for (let i = 0; i < collidableMeshes.length; i++) {
-                    const mesh = collidableMeshes[i];
-                    const meshBoundingBox = collisionBoundingBoxes.get(mesh.name);
-
-                    if (meshBoundingBox && !meshBoundingBox.isEmpty() && player.boundingBox.intersectsBox(meshBoundingBox)) {
-                        let didStepThisMesh = false;
-                        const headClearanceCheckOrigin = player.position.clone();
-                        const checkOffsetScale = playerRadiusBuffer * 0.5;
-                        headClearanceCheckOrigin.x += _movementDirection.x * checkOffsetScale;
-                        headClearanceCheckOrigin.z += _movementDirection.z * checkOffsetScale;
-                        headClearanceCheckOrigin.y += MAX_STEP_HEIGHT + 0.1;
-
-                        raycaster.set(headClearanceCheckOrigin, _movementDirection);
+                        const tempPos = player.position.clone();
+                        tempPos.x += dX;
+                        tempPos.z += dZ;
+                        player.boundingBox.setFromCenterAndSize(
+                        new THREE.Vector3(tempPos.x, player.position.y, tempPos.z),
+                        new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
+                        );
+                        let canMoveHorizontally = true;
+                        let steppedUp = false;
+                        if (dX !== 0 || dZ !== 0) {
+                        for (const mesh of collidableMeshes) {
+                        const meshBoundingBox = collisionBoundingBoxes.get(mesh.name);
+                        if (meshBoundingBox && !meshBoundingBox.isEmpty() &&
+                        player.boundingBox.intersectsBox(meshBoundingBox)) {
+                        let didStep = false;
+                        const headClearOrigin = player.position.clone();
+                        headClearOrigin.x += _movementDirection.x * playerRadiusBuffer * 0.5;
+                        headClearOrigin.z += _movementDirection.z * playerRadiusBuffer * 0.5;
+                        headClearOrigin.y += MAX_STEP_HEIGHT + 0.1;
+                        raycaster.set(headClearOrigin, _movementDirection);
                         raycaster.far = playerRadiusBuffer;
-                        const headClearanceIntersects = raycaster.intersectObject(mesh, true);
-
-                        if (headClearanceIntersects.length === 0) {
-                            const stepSurfaceRayOrigin = new THREE.Vector3(
-                                tempFuturePlayerPos.x,
-                                player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS,
-                                tempFuturePlayerPos.z
-                            );
-                            raycaster.set(stepSurfaceRayOrigin, new THREE.Vector3(0, -1, 0));
-                            raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
-                            const stepSurfaceIntersects = raycaster.intersectObject(mesh, true);
-
-                            if (stepSurfaceIntersects.length > 0) {
-                                const stepSurfaceY = stepSurfaceIntersects[0].point.y;
-                                const yDifference = stepSurfaceY - player.position.y;
-                                if (yDifference >= -0.01 && yDifference <= MAX_STEP_HEIGHT) {
-                                    player.position.x = tempFuturePlayerPos.x;
-                                    player.position.z = tempFuturePlayerPos.z;
-                                    player.position.y = stepSurfaceY;
-                                    player.isGrounded = true;
-                                    player.velocity.y = 0;
-                                    collisionResolvedByStepping = true;
-                                    didStepThisMesh = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!didStepThisMesh) {
-                            canMoveHorizontally = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (collisionResolvedByStepping) { } else if (canMoveHorizontally) {
-                player.position.x = tempFuturePlayerPos.x;
-                player.position.z = tempFuturePlayerPos.z;
-            }
-            cameraReference.position.x = player.position.x;
-            cameraReference.position.y = player.position.y + PLAYER_EYE_HEIGHT;
-            cameraReference.position.z = player.position.z;
-
-
-            // Animasi Interaktif
-            if (isPaperAnimating && paperObject) {
-                paperAnimationTime += deltaTime;
-                const progress = paperAnimationTime / PAPER_ANIMATION_DURATION;
-                // Animasi sederhana: goyang kertas sedikit pada sumbu Z
-                paperObject.rotation.z = originalPaperRotation.z + Math.sin(progress * Math.PI * 2) * 0.2; // Goyang 0.2 radian
-
-                if (paperAnimationTime >= PAPER_ANIMATION_DURATION) {
-                    isPaperAnimating = false;
-                    paperObject.rotation.copy(originalPaperRotation); // Kembalikan ke rotasi awal
-                }
-            }
-
-            if (isSteamAnimating && steamObject && originalSteamPosition) {
-                steamAnimationTime += deltaTime;
-                const progress = steamAnimationTime / STEAM_ANIMATION_DURATION;
-
-                steamObject.position.y = originalSteamPosition.y + progress * 5; // Naik sejauh 5 unit
-                if (steamObject.material) {
-                    steamObject.material.opacity = originalSteamOpacity * (1 - progress); // Fade out
-                }
-
-
-                if (steamAnimationTime >= STEAM_ANIMATION_DURATION) {
-                    isSteamAnimating = false;
-                    steamObject.visible = false; // Sembunyikan setelah selesai
-                    // Reset untuk animasi berikutnya tidak diperlukan di sini karena akan direset saat dipicu
-                }
-            }
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            const deltaTime = Math.min(0.05, clock.getDelta());
-            updatePlayerAndCamera(deltaTime);
-            renderer.render(scene, camera);
-        }
-
-        init();
-    </script>
-</body>
-
-</html>
+                        if (raycaster.intersectObject(mesh, true).length === 0) {
+                        const stepSurfaceOrigin = new THREE.Vector3(tempPos.x, player.position.y + MAX_STEP_HEIGHT +
+                        PLAYER_FEET_RADIUS, tempPos.z);
+                        raycaster.set(stepSurfaceOrigin, new THREE.Vector3(0, -1, 0));
+                        raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
+                        const stepHits = raycaster.intersectObject(mesh, true);
+                        if (stepHits.length > 0) {
+                        const yDiff = stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2 - player.position.y;
+                        if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) { player.position.set(tempPos.x,
+                            stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2, tempPos.z); player.isGrounded=true;
+                            player.velocity.y=0; steppedUp=true; didStep=true; break; } } } if (!didStep) {
+                            canMoveHorizontally=false; break; } } } } if (!steppedUp && canMoveHorizontally) {
+                            player.position.x=tempPos.x; player.position.z=tempPos.z; }
+                            camRef.position.set(player.position.x, player.position.y + PLAYER_EYE_HEIGHT -
+                            PLAYER_COLLISION_HEIGHT / 2, player.position.z); } } else { player.velocity.x=0;
+                            player.velocity.z=0; if (!isGhostMode) { if (!player.isGrounded) { player.velocity.y
+                            -=GRAVITY * deltaTime; player.position.y +=player.velocity.y * deltaTime; const
+                            groundRayOrigin=new THREE.Vector3(player.position.x, player.position.y + PLAYER_FEET_RADIUS
+                            * 0.5, player.position.z); raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
+                            raycaster.far=Math.max(PLAYER_FEET_RADIUS * 1.1, Math.abs(player.velocity.y * deltaTime) +
+                            PLAYER_FEET_RADIUS); const groundHits=raycaster.intersectObjects(collidableMeshes, true); if
+                            (player.velocity.y <=0 && groundHits.length> 0 && groundHits[0].distance <=
+                                PLAYER_FEET_RADIUS * 1.01) { player.position.y=groundHits[0].point.y +
+                                PLAYER_COLLISION_HEIGHT / 2; player.velocity.y=0; player.isGrounded=true; }
+                                controls.getObject().position.set(player.position.x, player.position.y +
+                                PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2, player.position.z); } } } if (isTVOn &&
+                                staticTexture && tvScreenMesh && staticTVMaterial===tvScreenMesh.material) {
+                                staticTexture.offset.x=((staticTexture.offset.x + (Math.random() * 0.1 - 0.05)) % 1 + 1)
+                                % 1; staticTexture.offset.y=((staticTexture.offset.y + (Math.random() * 0.1 - 0.05)) % 1
+                                + 1) % 1; } if (isSteamActive && steamObject && originalSteamPosition &&
+                                steamObject.material) { steamAnimationTime +=deltaTime; let
+                                loopProgress=(steamAnimationTime % STEAM_LOOP_DURATION) / STEAM_LOOP_DURATION;
+                                steamObject.position.set(originalSteamPosition.x, originalSteamPosition.y + loopProgress
+                                * STEAM_MAX_HEIGHT_OFFSET, originalSteamPosition.z); if (steamObject.material)
+                                steamObject.material.opacity=originalSteamOpacity * (1 - loopProgress); }
+                                updatePaperAnimation(deltaTime); } function onWindowResize() {
+                                camera.aspect=window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+                                renderer.setSize(window.innerWidth, window.innerHeight); } function animate() {
+                                requestAnimationFrame(animate); const deltaTime=Math.min(0.05, clock.getDelta());
+                                updatePlayerAndCamera(deltaTime); if (sonicMixer) sonicMixer.update(deltaTime);
+                                renderer.render(scene, camera); } if (document.readyState==="loading" ) {
+                                document.addEventListener("DOMContentLoaded", init); } else { init(); } --- END OF FILE
+                                main.js ---
