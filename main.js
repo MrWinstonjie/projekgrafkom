@@ -1,21 +1,20 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
-import { EXRLoader } from "three/addons/loaders/EXRLoader.js"; // <--- TAMBAHKAN IMPORT INI
+import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
 
 let scene, camera, renderer, model, controls;
 const clock = new THREE.Clock();
 
-let sonicModel, sonicMixer, sonicAnimationClips, sonicBoundingBoxHelper;
+let sonicModel, sonicMixer, sonicAnimationClips;
 const SONIC_MODEL_PATH = "sonic_spinning/scene.gltf";
-const SONIC_SCALE_IN_LAB = 1000.0; // Atau skala yang Anda inginkan
+const SONIC_SCALE_IN_LAB = 1000.0;
 
 // --- Sonic Settings ---
-const SONIC_SPAWN_TARGET_OBJECT_NAME = "Object_25"; // Contoh
-const SONIC_SPAWN_X_OFFSET = 0;
-const SONIC_SPAWN_Y_OFFSET = -26; // Sesuaikan berdasarkan skala Sonic
+const SONIC_SPAWN_TARGET_OBJECT_NAME = "Object_25";
+const SONIC_SPAWN_X_OFFSET = 2;
+const SONIC_SPAWN_Y_OFFSET = -26;
 const SONIC_SPAWN_Z_OFFSET = 3;
-// Variabel untuk penyesuaian posisi Sonic secara dinamis
 let sonicBasePosition = new THREE.Vector3();
 let sonicPositionOffset = new THREE.Vector3(0, 0, 0);
 let isSonicAdjustMode = false;
@@ -26,29 +25,22 @@ let currentSonicAnimationAction = null;
 
 // --- Player Controls & Physics ---
 const keys = {
-  W: false,
-  A: false,
-  S: false,
-  D: false,
-  SHIFT_LEFT: false,
-  SPACE: false,
-  E_INTERACT: false,
-  G: false,
-  Q_GHOST_DOWN: false,
-  T: false, // No longer tracking state for T if it's a toggle trigger
+  W: false, A: false, S: false, D: false,
+  SHIFT_LEFT: false, SPACE: false, E_INTERACT: false,
+  G: false, Q_GHOST_DOWN: false, T: false,
 };
 
 let isGhostMode = false;
-const GHOST_MODE_SPEED_MULTIPLIER = 3.0; // Meningkatkan kecepatan ghost mode
+const GHOST_MODE_SPEED_MULTIPLIER = 3.0;
 
 const PLAYER_EYE_HEIGHT = 10.5;
 const PLAYER_COLLISION_HEIGHT = 1.8;
 const GRAVITY = 20.0;
 const JUMP_IMPULSE = 8.0;
-const MAX_STEP_HEIGHT = 8.0; // Meningkatkan kemampuan melangkah
-const playerRadiusBuffer = 5; // Mengurangi buffer radius
+const MAX_STEP_HEIGHT = 8.0;
+const playerRadiusBuffer = 5;
 const PLAYER_FEET_RADIUS = playerRadiusBuffer * 0.8;
-const INTERACTION_DISTANCE = 30.0; // Meningkatkan jarak interaksi
+const INTERACTION_DISTANCE = 30.0;
 
 let player = {
   position: new THREE.Vector3(),
@@ -67,60 +59,20 @@ const OBJECT3_NAME = "Object_3";
 const raycaster = new THREE.Raycaster();
 const interactionRaycaster = new THREE.Raycaster();
 const collidableMeshes = [];
-// !!! PENTING: Jika jembatan sekarang adalah bagian dari model utama,
-// pastikan nama mesh jembatan ada di sini agar bisa dipijak.
-// Contoh: "Mesh_Jembatan_Kiri_Bagian1", "Mesh_Jembatan_Kanan_Utama", dll.
 const collidableObjectNames = [
-  "Object_13108",
-  "Object_13105",
-  "Object_22",
-  "Object_23",
-  "Object_14",
-  "Object_15",
-  "Object_16",
-  "Object_18",
-  "Object_6",
-  "Object_20",
-  "Object_25",
-  "Object_24",
-  "model_0010",
-  "model_0014",
-  "model_0022",
-  "model_0029",
-  "model_0030",
-  "model_0034",
-  "model_0040",
-  "model_0042",
-  "model_0047",
-  "model_0050",
-  "model_0058",
-  "model_0080",
-  "model_0085",
-  "model_0100",
-  "model_0197",
-  "model_0002",
-  "model_0003",
-  "model_0005",
-  "model_0006",
-  "model_0009",
-  "model_0011",
-  "model_0012",
-  "model_0015",
-  "model_0016",
-  "model_0017",
-  "model_0018",
-  "model_0020",
-  "model_0021",
-  "model_0025",
-  "model_0026",
-  // Tambahkan nama mesh jembatan Anda di sini jika belum ada
+  "Object_13108", "Object_13105", "Object_22", "Object_23", "Object_14",
+  "Object_15", "Object_16", "Object_18", "Object_6", "Object_20",
+  "Object_25", "Object_24", "model_0010", "model_0014", "model_0022",
+  "model_0029", "model_0030", "model_0034", "model_0040", "model_0042",
+  "model_0047", "model_0050", "model_0058", "model_0080", "model_0085",
+  "model_0100", "model_0197", "model_0002", "model_0003", "model_0005",
+  "model_0006", "model_0009", "model_0011", "model_0012", "model_0015",
+  "model_0016", "model_0017", "model_0018", "model_0020", "model_0021",
+  "model_0025", "model_0026",
 ];
 const interactiveObjectNames = [
-  // Objek yang bisa diinteraksi dengan tombol 'E'
-  "Object_13108",
-  "Object_23",
-  "Object_18",
-  "Object_23025",
+  "Object_13108", "Object_23", "Object_18", "Object_23025",
+  "Object_16" // <<<--- TAMBAHKAN Object_16 DI SINI
 ];
 const collisionBoundingBoxes = new Map();
 
@@ -245,39 +197,27 @@ function init() {
 
   const labLoader = new GLTFLoader();
   labLoader.load(
-    "EDGEHOG ISLAND LABOLATORY.glb", // Ganti dengan nama file GLB utama Anda yang sudah termasuk jembatan
+    "EDGEHOG ISLAND LABOLATORY.glb",
     (gltf) => {
       console.log("Main lab model (with integrated bridge) GLTF loaded.");
       model = gltf.scene;
-      const labModelScale = 0.05; // Skala model utama Anda
+      const labModelScale = 0.05;
       model.scale.set(labModelScale, labModelScale, labModelScale);
 
       model.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
-          // Logika untuk menambahkan mesh ke daftar collidable
-          // dan membuat bounding box untuk collision
           if (collidableObjectNames.includes(child.name)) {
             collidableMeshes.push(child);
             collisionBoundingBoxes.set(
               child.name,
               new THREE.Box3().setFromObject(child)
             );
-            console.log(`Added ${child.name} to collidables with BBox.`);
-          } else {
-            // Jika nama tidak ada di collidableObjectNames, tapi Anda ingin semua mesh collidable secara default:
-            // collidableMeshes.push(child);
-            // if (child.name) { // Hanya buat BBox jika ada nama untuk sistem collision AABB saat ini
-            //    collisionBoundingBoxes.set(child.name, new THREE.Box3().setFromObject(child));
-            //    console.log(`Auto-added ${child.name} to collidables with BBox (not in list).`);
-            // } else {
-            //    console.warn(`Mesh without name found, not added to BBox map:`, child);
-            // }
+            // console.log(`Added ${child.name} to collidables with BBox.`); // Optional: uncomment for debugging
           }
 
           if (child.name === "Object_23045") {
-            // Setup untuk kertas
             paperMesh = child;
             originalPaperMaterial = paperMesh.material
               ? paperMesh.material.clone()
@@ -291,14 +231,27 @@ function init() {
       });
       scene.add(model);
 
-      // Setup objek interaktif lainnya
       object3Mesh = model.getObjectByName(OBJECT3_NAME);
       if (object3Mesh && object3Mesh.isMesh) {
-        /* ... */
-      } else console.warn(`${OBJECT3_NAME} not found or is not a mesh.`);
+        console.log(`${OBJECT3_NAME} found.`);
+        if (object3Mesh.material) {
+            originalObject3Material = object3Mesh.material.clone();
+        } else {
+            originalObject3Material = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+            object3Mesh.material = originalObject3Material.clone();
+        }
+        glowingObject3Material = new THREE.MeshStandardMaterial({
+            emissive: 0xffff00,
+            emissiveIntensity: 1.5,
+        });
+      } else {
+        console.warn(`${OBJECT3_NAME} not found or is not a mesh.`);
+      }
+
       tvScreenMesh = model.getObjectByName("Object_13105");
       if (tvScreenMesh && tvScreenMesh.isMesh && tvScreenMesh.material)
         originalTVMaterial = tvScreenMesh.material.clone();
+
       steamObject = model.getObjectByName("Object_17");
       if (steamObject && steamObject.isMesh) {
         originalSteamPosition = steamObject.position.clone();
@@ -309,7 +262,6 @@ function init() {
         }
       }
 
-      // Setup posisi awal player
       const targetObjectName = "Object_6";
       let targetObject = model.getObjectByName(targetObjectName);
       if (targetObject) {
@@ -317,7 +269,7 @@ function init() {
         targetObject.getWorldPosition(player.position);
         player.position.y = boundingBox.max.y;
       } else {
-        player.position.set(0, PLAYER_COLLISION_HEIGHT / 2, 5); // Posisi default jika target tidak ditemukan
+        player.position.set(0, PLAYER_COLLISION_HEIGHT / 2, 5);
       }
       player.isGrounded = true;
       controls
@@ -337,8 +289,6 @@ function init() {
       );
 
       loadSonicModel();
-      // Tidak perlu loadBridge() lagi
-
       animate();
     },
     (xhr) =>
@@ -364,12 +314,8 @@ function setupLighting() {
   scene.add(dirLight);
 }
 
-// Letakkan fungsi ini di mana saja di luar fungsi init() atau animate()
-// Misalnya, setelah setupLighting() atau sebelum onKeyDown()
-
 function loadEXRBackground(filePath) {
   if (!scene || !renderer) {
-    // Renderer juga dibutuhkan untuk PMREMGenerator
     console.error(
       "Scene or Renderer is not initialized yet. Cannot load EXR background."
     );
@@ -377,32 +323,25 @@ function loadEXRBackground(filePath) {
   }
 
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
-  pmremGenerator.compileEquirectangularShader(); // Pre-compile shader
+  pmremGenerator.compileEquirectangularShader();
 
   new EXRLoader().load(
-    filePath, // e.g., 'hdri/background.exr'
+    filePath,
     (texture) => {
       console.log(`EXR background loaded from ${filePath}`);
-
-      // PMREMGenerator memproses tekstur equirectangular menjadi environment map
       const envMap = pmremGenerator.fromEquirectangular(texture).texture;
-
       scene.background = envMap;
-      scene.environment = envMap; // Sangat penting untuk pencahayaan berbasis gambar (IBL)
-
-      texture.dispose(); // Kita tidak butuh tekstur asli lagi setelah diproses
-      pmremGenerator.dispose(); // Bersihkan generator setelah selesai
-
+      scene.environment = envMap;
+      texture.dispose();
+      pmremGenerator.dispose();
       console.log("EXR background and environment map set.");
     },
-    // onProgress callback (opsional)
     (xhr) => {
       console.log(`EXR background loading: ${(xhr.loaded / xhr.total) * 100}%`);
     },
-    // onError callback
     (error) => {
       console.error(`Error loading EXR background from ${filePath}:`, error);
-      pmremGenerator.dispose(); // Bersihkan generator jika ada error
+      pmremGenerator.dispose();
     }
   );
 }
@@ -426,13 +365,13 @@ function loadSonicModel() {
       }
       sonicModel.name = "SonicTheHedgehog_DEBUG";
 
-      const FORCED_DEBUG_SCALE = 1000.0;
+      const FORCED_DEBUG_SCALE = SONIC_SCALE_IN_LAB; // Menggunakan variabel yang sudah ada
       sonicModel.scale.set(
         FORCED_DEBUG_SCALE,
         FORCED_DEBUG_SCALE,
         FORCED_DEBUG_SCALE
       );
-      console.log(`DEBUG: Sonic FORCED scale: ${FORCED_DEBUG_SCALE}`);
+      console.log(`DEBUG: Sonic scale set to: ${FORCED_DEBUG_SCALE}`);
 
       let sonicTargetPosition = new THREE.Vector3();
       let positionSetByTargetObject = false;
@@ -453,18 +392,18 @@ function loadSonicModel() {
           if (!targetBoundingBox.isEmpty()) {
             const targetWorldCenter = new THREE.Vector3();
             targetBoundingBox.getCenter(targetWorldCenter);
-            sonicTargetPosition.x = targetWorldCenter.x + SONIC_SPAWN_X_OFFSET; // MODIFIED
+            sonicTargetPosition.x = targetWorldCenter.x + SONIC_SPAWN_X_OFFSET;
             sonicTargetPosition.y =
               targetBoundingBox.max.y + SONIC_SPAWN_Y_OFFSET;
-            sonicTargetPosition.z = targetWorldCenter.z + SONIC_SPAWN_Z_OFFSET; // MODIFIED
+            sonicTargetPosition.z = targetWorldCenter.z + SONIC_SPAWN_Z_OFFSET;
           } else {
             console.warn(
               `DEBUG: Target object ${SONIC_SPAWN_TARGET_OBJECT_NAME} bounding box is empty. Using its origin + offsets.`
             );
             targetObject.getWorldPosition(sonicTargetPosition);
-            sonicTargetPosition.x += SONIC_SPAWN_X_OFFSET; // MODIFIED
+            sonicTargetPosition.x += SONIC_SPAWN_X_OFFSET;
             sonicTargetPosition.y += SONIC_SPAWN_Y_OFFSET;
-            sonicTargetPosition.z += SONIC_SPAWN_Z_OFFSET; // MODIFIED
+            sonicTargetPosition.z += SONIC_SPAWN_Z_OFFSET;
           }
           positionSetByTargetObject = true;
         } else {
@@ -485,9 +424,9 @@ function loadSonicModel() {
           camera.getWorldDirection(cameraWorldDir);
           sonicTargetPosition = cameraWorldPos
             .clone()
-            .add(cameraWorldDir.multiplyScalar(-10));
+            .add(cameraWorldDir.multiplyScalar(-10)); // Jarak fallback dari kamera
         } else {
-          sonicTargetPosition.set(0, FORCED_DEBUG_SCALE * 0.1, 0);
+          sonicTargetPosition.set(0, FORCED_DEBUG_SCALE * 0.1, 0); // Posisi default jika kamera belum siap
           console.warn(
             "CRITICAL DEBUG: Camera object not ready for Sonic spawn fallback, using specified default."
           );
@@ -534,42 +473,16 @@ function loadSonicModel() {
         return;
       }
 
-      sonicModel.updateMatrixWorld(true);
-      const sonicBox = new THREE.Box3().setFromObject(sonicModel);
+      // Bounding box helper untuk Sonic tidak lagi ditambahkan ke scene
+      // console.log("DEBUG: Sonic bounding box helper is intentionally not added.");
 
-      if (!sonicBox.isEmpty()) {
-        if (sonicBoundingBoxHelper) {
-          scene.remove(sonicBoundingBoxHelper);
-          sonicBoundingBoxHelper.dispose();
-        }
-        sonicBoundingBoxHelper = new THREE.Box3Helper(sonicBox, 0x00ff00);
-        if (scene) {
-          scene.add(sonicBoundingBoxHelper);
-          console.log("DEBUG: sonicBoundingBoxHelper was added to scene.");
-        } else {
-          console.error(
-            "CRITICAL DEBUG: Scene is undefined when trying to add sonicBoundingBoxHelper!"
-          );
-        }
-        const size = new THREE.Vector3();
-        sonicBox.getSize(size);
-        console.log("DEBUG: Sonic's FORCED bounding box world size:", size);
-        const center = new THREE.Vector3();
-        sonicBox.getCenter(center);
-        console.log("DEBUG: Sonic's FORCED bounding box world center:", center);
-      } else {
-        console.error(
-          "CRITICAL DEBUG: Sonic's bounding box is EMPTY after FORCED loading and scaling!"
-        );
-      }
-
-      // Setup animations but do not play immediately
       sonicAnimationClips = gltf.animations;
       if (sonicAnimationClips && sonicAnimationClips.length) {
         sonicMixer = new THREE.AnimationMixer(sonicModel);
         console.log(
-          "Sonic model has animations, ready to be played on command via toggleSonicAnimation()."
+          "Sonic model has animations, ready to be played."
         );
+        // Animasi tidak dimainkan secara default di sini, hanya disiapkan
       } else {
         console.log("Sonic model has no animations.");
       }
@@ -580,7 +493,6 @@ function loadSonicModel() {
   );
 }
 
-// Fungsi helper untuk log posisi Sonic yang disesuaikan
 function logSonicAdjustedPosition() {
   if (sonicModel && sonicBasePosition) {
     const adjustedPos = new THREE.Vector3()
@@ -600,7 +512,6 @@ function logSonicAdjustedPosition() {
   }
 }
 
-// Function to toggle Sonic's animation
 function toggleSonicAnimation() {
   if (
     !sonicModel ||
@@ -619,19 +530,21 @@ function toggleSonicAnimation() {
     }
     isSonicAnimationPlaying = false;
   } else {
+    // Coba cari animasi bernama "spin", lalu "idle", atau ambil yang pertama jika tidak ada
     let animToPlay =
       sonicAnimationClips.find((clip) =>
         clip.name.toLowerCase().includes("spin")
       ) ||
       sonicAnimationClips.find((clip) =>
-        clip.name.toLowerCase().includes("idle")
+        clip.name.toLowerCase().includes("idle") // Tambahkan pencarian untuk "idle"
       ) ||
-      sonicAnimationClips[0];
+      sonicAnimationClips[0]; // Fallback ke animasi pertama
 
     if (animToPlay) {
       currentSonicAnimationAction = sonicMixer.clipAction(animToPlay);
       currentSonicAnimationAction.reset().play();
-      // To play animation only once:
+      // Untuk loop: currentSonicAnimationAction.setLoop(THREE.LoopRepeat); (defaultnya sudah repeat)
+      // Untuk sekali jalan:
       // currentSonicAnimationAction.setLoop(THREE.LoopOnce);
       // currentSonicAnimationAction.clampWhenFinished = true;
       console.log(`Playing Sonic animation: ${animToPlay.name}`);
@@ -642,46 +555,32 @@ function toggleSonicAnimation() {
   }
 }
 
-// Fungsi loadBridge, addCollisionForBridge, removeCollisionForBridge, updateBridgeAnimation TELAH DIHAPUS
 
 function onKeyDown(event) {
   switch (event.code) {
-    case "KeyW":
-      keys.W = true;
-      break;
-    case "KeyA":
-      keys.A = true;
-      break;
-    case "KeyS":
-      keys.S = true;
-      break;
-    case "KeyD":
-      keys.D = true;
-      break;
-    case "ShiftLeft":
-      keys.SHIFT_LEFT = true;
-      break;
-    case "Space":
-      keys.SPACE = true;
-      break;
+    case "KeyW": keys.W = true; break;
+    case "KeyA": keys.A = true; break;
+    case "KeyS": keys.S = true; break;
+    case "KeyD": keys.D = true; break;
+    case "ShiftLeft": keys.SHIFT_LEFT = true; break;
+    case "Space": keys.SPACE = true; break;
     case "KeyE":
-      keys.E_INTERACT = true;
-      if (controls.isLocked) handleInteraction();
+      keys.E_INTERACT = true; // Set state E_INTERACT di sini
+      if (controls.isLocked) handleInteraction(); // Panggil handleInteraction jika kontrol terkunci
       break;
     case "KeyQ":
       if (isGhostMode) keys.Q_GHOST_DOWN = true;
       break;
     case "KeyG":
-      if (!keys.G) {
-        // Check G state to prevent rapid toggling if key is held
+      if (!keys.G) { // Hanya toggle jika G belum ditekan (mencegah toggle cepat saat ditahan)
         isGhostMode = !isGhostMode;
         console.log("Ghost Mode:", isGhostMode ? "ON" : "OFF");
-        if (isGhostMode) player.velocity.y = 0;
+        if (isGhostMode) player.velocity.y = 0; // Hentikan gerakan vertikal saat masuk ghost mode
       }
-      keys.G = true; // Set G state to true when pressed
+      keys.G = true; // Tandai G sebagai ditekan
       break;
 
-    case "KeyT": // Use 'T' to toggle Sonic's animation
+    case "KeyT": // 'T' tetap untuk toggle animasi Sonic secara manual jika diperlukan (untuk debug)
       if (sonicModel) {
         toggleSonicAnimation();
       }
@@ -703,76 +602,26 @@ function onKeyDown(event) {
         }
       }
       break;
-    case "KeyJ":
-      if (isSonicAdjustMode && sonicModel) {
-        sonicPositionOffset.x -= SONIC_ADJUST_STEP;
-        logSonicAdjustedPosition();
-      }
-      break;
-    case "KeyL":
-      if (isSonicAdjustMode && sonicModel) {
-        sonicPositionOffset.x += SONIC_ADJUST_STEP;
-        logSonicAdjustedPosition();
-      }
-      break;
-    case "KeyU":
-      if (isSonicAdjustMode && sonicModel) {
-        sonicPositionOffset.y += SONIC_ADJUST_STEP;
-        logSonicAdjustedPosition();
-      }
-      break;
-    case "KeyO":
-      if (isSonicAdjustMode && sonicModel) {
-        sonicPositionOffset.y -= SONIC_ADJUST_STEP;
-        logSonicAdjustedPosition();
-      }
-      break;
-    case "KeyI":
-      if (isSonicAdjustMode && sonicModel) {
-        sonicPositionOffset.z += SONIC_ADJUST_STEP;
-        logSonicAdjustedPosition();
-      }
-      break;
-    case "KeyK":
-      if (isSonicAdjustMode && sonicModel) {
-        // Corrected typo from isSonicModeAjuste
-        sonicPositionOffset.z -= SONIC_ADJUST_STEP;
-        logSonicAdjustedPosition();
-      }
-      break;
+    case "KeyJ": if (isSonicAdjustMode && sonicModel) { sonicPositionOffset.x -= SONIC_ADJUST_STEP; logSonicAdjustedPosition(); } break;
+    case "KeyL": if (isSonicAdjustMode && sonicModel) { sonicPositionOffset.x += SONIC_ADJUST_STEP; logSonicAdjustedPosition(); } break;
+    case "KeyU": if (isSonicAdjustMode && sonicModel) { sonicPositionOffset.y += SONIC_ADJUST_STEP; logSonicAdjustedPosition(); } break;
+    case "KeyO": if (isSonicAdjustMode && sonicModel) { sonicPositionOffset.y -= SONIC_ADJUST_STEP; logSonicAdjustedPosition(); } break;
+    case "KeyI": if (isSonicAdjustMode && sonicModel) { sonicPositionOffset.z += SONIC_ADJUST_STEP; logSonicAdjustedPosition(); } break;
+    case "KeyK": if (isSonicAdjustMode && sonicModel) { sonicPositionOffset.z -= SONIC_ADJUST_STEP; logSonicAdjustedPosition(); } break;
   }
 }
 
 function onKeyUp(event) {
   switch (event.code) {
-    case "KeyW":
-      keys.W = false;
-      break;
-    case "KeyA":
-      keys.A = false;
-      break;
-    case "KeyS":
-      keys.S = false;
-      break;
-    case "KeyD":
-      keys.D = false;
-      break;
-    case "ShiftLeft":
-      keys.SHIFT_LEFT = false;
-      break;
-    case "Space":
-      keys.SPACE = false;
-      break;
-    case "KeyE":
-      keys.E_INTERACT = false;
-      break;
-    case "KeyQ":
-      keys.Q_GHOST_DOWN = false;
-      break;
-    case "KeyG":
-      keys.G = false;
-      break; // Reset G state on key up
-    // case "KeyT": keys.T = false; break; // Not needed if T is a one-shot trigger
+    case "KeyW": keys.W = false; break;
+    case "KeyA": keys.A = false; break;
+    case "KeyS": keys.S = false; break;
+    case "KeyD": keys.D = false; break;
+    case "ShiftLeft": keys.SHIFT_LEFT = false; break;
+    case "Space": keys.SPACE = false; break;
+    case "KeyE": keys.E_INTERACT = false; break; // Reset state E_INTERACT di sini
+    case "KeyQ": keys.Q_GHOST_DOWN = false; break;
+    case "KeyG": keys.G = false; break; // Reset state G saat dilepas
   }
 }
 
@@ -781,13 +630,17 @@ function startPaperAnimation(showTexture) {
     paperAnimationActive = true;
     paperAnimationTime = 0;
     paperTargetOpacity = showTexture ? 1.0 : 0.0;
-    paperCurrentOpacity = showTexture ? 0.0 : 1.0;
+    paperCurrentOpacity = showTexture ? 0.0 : 1.0; // Mulai dari opacity yang sesuai
     if (showTexture && paperMesh && paperPrintMaterial) {
       paperMesh.material = paperPrintMaterial;
       if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity;
+    } else if (!showTexture && paperMesh && paperPrintMaterial && paperMesh.material === paperPrintMaterial) {
+        // Jika menyembunyikan dan material saat ini adalah print, kita akan memudarkannya
+        if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity; // Seharusnya 1.0
     }
   }
 }
+
 function updatePaperAnimation(deltaTime) {
   if (paperAnimationActive) {
     paperAnimationTime += deltaTime;
@@ -795,24 +648,20 @@ function updatePaperAnimation(deltaTime) {
       paperAnimationTime / PAPER_ANIMATION_DURATION,
       1.0
     );
-    const easeProgress =
-      progress < 0.5
-        ? 2 * progress * progress
-        : -1 + (4 - 2 * progress) * progress;
-    paperCurrentOpacity =
-      paperCurrentOpacity +
-      (paperTargetOpacity - paperCurrentOpacity) * easeProgress;
-    if (
-      paperMesh &&
-      paperPrintMaterial &&
-      paperMesh.material === paperPrintMaterial
-    ) {
-      if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity;
+    // Simple linear interpolation for opacity
+    paperCurrentOpacity = paperTargetOpacity === 1.0 ? progress : 1.0 - progress;
+
+
+    if (paperMesh && paperPrintMaterial && paperMesh.material === paperPrintMaterial) {
+        if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity;
     }
+
     if (progress >= 1.0) {
       paperAnimationActive = false;
       if (paperTargetOpacity === 0 && paperMesh && originalPaperMaterial) {
-        paperMesh.material = originalPaperMaterial;
+        paperMesh.material = originalPaperMaterial; // Kembali ke material asli setelah fade out
+      } else if (paperTargetOpacity === 1.0 && paperMesh && paperPrintMaterial) {
+        if (paperMesh.material) paperMesh.material.opacity = 1.0; // Pastikan opacity 1 di akhir fade in
       }
     }
   }
@@ -825,30 +674,39 @@ function handleInteraction() {
     const obj = model.getObjectByName(name);
     if (obj) interactableSceneObjects.push(obj);
   });
+
+  // Pastikan objek yang akan di-intersect adalah mesh atau group yang visible
   const actualInteractables = interactableSceneObjects.filter(
-    (obj) => obj.children.length > 0 || obj.isMesh || obj.isGroup
+    (obj) => obj && obj.visible && (obj.isMesh || obj.isGroup || obj.children.length > 0)
   );
+
   if (actualInteractables.length === 0) return;
+
   const intersects = interactionRaycaster.intersectObjects(
     actualInteractables,
-    true
+    true // recursive
   );
 
   if (intersects.length > 0 && intersects[0].distance < INTERACTION_DISTANCE) {
     const intersectedRawObject = intersects[0].object;
     let interactiveObjectName = intersectedRawObject.name;
+
+    // Traverse up untuk menemukan parent yang ada di interactiveObjectNames jika mesh yang di-klik adalah child
     let current = intersectedRawObject;
     while (current && !interactiveObjectNames.includes(current.name)) {
       current = current.parent;
-      if (current && current.isScene) {
+      if (current && current.isScene) { // Jangan sampai ke root scene
         current = null;
         break;
       }
     }
-    if (current) interactiveObjectName = current.name;
-    else if (interactiveObjectNames.includes(intersectedRawObject.name))
-      interactiveObjectName = intersectedRawObject.name;
-    else return;
+    if (current) { // Jika parent yang interaktif ditemukan
+        interactiveObjectName = current.name;
+    } else if (!interactiveObjectNames.includes(intersectedRawObject.name)){
+        // Jika raw object itu sendiri tidak interaktif dan tidak ada parent interaktif
+        return;
+    }
+    // Jika raw object itu sendiri interaktif, interactiveObjectName sudah benar.
 
     console.log("Interacting with:", interactiveObjectName);
 
@@ -856,23 +714,26 @@ function handleInteraction() {
       if (tvScreenMesh && originalTVMaterial && staticTVMaterial) {
         isTVOn = !isTVOn;
         tvScreenMesh.material = isTVOn ? staticTVMaterial : originalTVMaterial;
+        console.log("TV Toggled:", isTVOn ? "ON" : "OFF");
       }
       if (object3Mesh && originalObject3Material && glowingObject3Material) {
         isObject3On = !isObject3On;
         object3Mesh.material = isObject3On
           ? glowingObject3Material
           : originalObject3Material;
+        console.log(OBJECT3_NAME + " Light Toggled:", isObject3On ? "ON (Yellow)" : "OFF");
       }
     } else if (
       (interactiveObjectName === "Object_23" ||
-        interactiveObjectName === "Object_23025") &&
+        interactiveObjectName === "Object_23025") && // Object_23025 adalah mesh kertas
       paperMesh &&
       originalPaperMaterial &&
       paperPrintMaterial &&
-      !paperAnimationActive
+      !paperAnimationActive // Hanya jika tidak ada animasi kertas yang sedang berjalan
     ) {
       isPaperTextureVisible = !isPaperTextureVisible;
       startPaperAnimation(isPaperTextureVisible);
+      console.log("Paper texture toggled:", isPaperTextureVisible ? "Visible" : "Hidden");
     } else if (interactiveObjectName === "Object_18" && steamObject) {
       isSteamActive = !isSteamActive;
       if (isSteamActive) {
@@ -880,86 +741,84 @@ function handleInteraction() {
         if (originalSteamPosition)
           steamObject.position.copy(originalSteamPosition);
         if (steamObject.material)
-          steamObject.material.opacity = originalSteamOpacity;
+          steamObject.material.opacity = originalSteamOpacity; // Reset opacity
         steamObject.visible = true;
-      } else steamObject.visible = false;
+      } else {
+        steamObject.visible = false;
+      }
+      console.log("Steam toggled:", isSteamActive ? "Active" : "Inactive");
+    } else if (interactiveObjectName === "Object_16") { // <<<--- INTERAKSI DENGAN Object_16
+        console.log("Attempting to toggle Sonic animation via Object_16.");
+        toggleSonicAnimation(); // Panggil fungsi untuk toggle animasi Sonic
     }
-    // Logika interaksi jembatan dihapus
-    // else if (interactiveObjectName === "Object_21055" || interactiveObjectName === "Object_21103") {
-    //   console.log("Interacted with a former bridge activator. No action defined.");
-    // }
   }
 }
 
 function updatePlayerAndCamera(deltaTime) {
   if (controls.isLocked) {
     const camRef = controls.getObject();
-    let baseSpeed = 8.0;
-    let currentSpeed = (keys.SHIFT_LEFT ? 1.5 : 1) * baseSpeed;
+    let baseSpeed = 8.0; // Kecepatan dasar player
+    let currentSpeed = (keys.SHIFT_LEFT ? 1.5 : 1) * baseSpeed; // Sprint jika Shift ditekan
     if (isGhostMode) currentSpeed *= GHOST_MODE_SPEED_MULTIPLIER;
     const actualSpeed = currentSpeed * deltaTime;
 
-    camRef.getWorldDirection(_forward);
-    if (!isGhostMode) _forward.y = 0;
+    camRef.getWorldDirection(_forward); // Arah pandang kamera
+    if (!isGhostMode) _forward.y = 0; // Abaikan komponen Y untuk gerakan di darat
     _forward.normalize();
-    _right.crossVectors(camRef.up, _forward).normalize();
+
+    _right.crossVectors(camRef.up, _forward).normalize(); // Arah kanan relatif terhadap kamera
 
     _movementDirection.set(0, 0, 0);
     if (keys.W) _movementDirection.add(_forward);
     if (keys.S) _movementDirection.sub(_forward);
-    if (keys.A) _movementDirection.add(_right);
-    if (keys.D) _movementDirection.sub(_right);
+    if (keys.A) _movementDirection.add(_right); // Bergerak ke kiri (negatif sumbu kanan kamera)
+    if (keys.D) _movementDirection.sub(_right); // Bergerak ke kanan (positif sumbu kanan kamera)
+
     if (_movementDirection.lengthSq() > 0) _movementDirection.normalize();
 
     const dX = _movementDirection.x * actualSpeed;
-    const dYfromWASD = isGhostMode ? _movementDirection.y * actualSpeed : 0;
+    const dYfromWASD = isGhostMode ? _movementDirection.y * actualSpeed : 0; // Hanya untuk ghost mode
     const dZ = _movementDirection.z * actualSpeed;
 
     if (isGhostMode) {
-      player.velocity.y = 0;
+      player.velocity.y = 0; // Tidak ada gravitasi di ghost mode
       player.position.x += dX;
-      player.position.y += dYfromWASD;
+      player.position.y += dYfromWASD; // Gerakan Y dari W/S jika ghost mode
       player.position.z += dZ;
-      if (keys.SPACE) player.position.y += actualSpeed;
-      if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed;
+      if (keys.SPACE) player.position.y += actualSpeed; // Naik
+      if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed; // Turun
       player.isGrounded = false;
       camRef.position.copy(player.position);
     } else {
-      if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime;
+      // --- Non-Ghost Mode (Physics) ---
+      if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime; // Terapkan gravitasi
+
       if (keys.SPACE && player.isGrounded && player.canJump) {
         player.velocity.y = JUMP_IMPULSE;
         player.isGrounded = false;
-        player.canJump = false;
+        player.canJump = false; // Mencegah double jump instan
       }
-      if (!keys.SPACE) player.canJump = true;
+      if (!keys.SPACE) player.canJump = true; // Boleh lompat lagi setelah tombol Space dilepas
 
-      const groundRayOrigin = new THREE.Vector3(
-        player.position.x,
-        player.position.y + PLAYER_FEET_RADIUS * 0.5,
-        player.position.z
-      );
+      // Ground Check Raycast
+      const groundRayOrigin = player.position.clone();
+      groundRayOrigin.y += PLAYER_FEET_RADIUS * 0.5; // Mulai sedikit di atas dasar bounding box player
       raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
-      raycaster.far = Math.max(
-        PLAYER_FEET_RADIUS * 1.1,
-        Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS
-      );
+      raycaster.far = Math.max(PLAYER_FEET_RADIUS * 1.1, Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS);
       const groundHits = raycaster.intersectObjects(collidableMeshes, true);
       player.isGrounded = false;
-      if (
-        player.velocity.y <= 0 &&
-        groundHits.length > 0 &&
-        groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01
-      ) {
+
+      if (player.velocity.y <= 0 && groundHits.length > 0 && groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01) {
         player.position.y = groundHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2;
         player.velocity.y = 0;
         player.isGrounded = true;
       }
-      player.position.y += player.velocity.y * deltaTime;
+      player.position.y += player.velocity.y * deltaTime; // Terapkan gerakan vertikal
 
+      // Head Collision (jika bergerak ke atas)
       if (player.velocity.y > 0) {
-        const headOrigin = player.position
-          .clone()
-          .add(new THREE.Vector3(0, PLAYER_COLLISION_HEIGHT / 2 - 0.1, 0));
+        const headOrigin = player.position.clone();
+        headOrigin.y += PLAYER_COLLISION_HEIGHT / 2 - 0.1; // Sedikit di bawah atas kepala
         raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
         raycaster.far = player.velocity.y * deltaTime + 0.2;
         const headHits = raycaster.intersectObjects(collidableMeshes, true);
@@ -969,63 +828,50 @@ function updatePlayerAndCamera(deltaTime) {
         }
       }
 
+      // Horizontal Movement & Collision
       const tempPos = player.position.clone();
       tempPos.x += dX;
       tempPos.z += dZ;
+
       player.boundingBox.setFromCenterAndSize(
-        new THREE.Vector3(tempPos.x, player.position.y, tempPos.z),
-        new THREE.Vector3(
-          playerRadiusBuffer * 2,
-          PLAYER_COLLISION_HEIGHT,
-          playerRadiusBuffer * 2
-        )
+        new THREE.Vector3(tempPos.x, player.position.y, tempPos.z), // Gunakan Y saat ini untuk BBox horizontal
+        new THREE.Vector3(playerRadiusBuffer * 2, PLAYER_COLLISION_HEIGHT, playerRadiusBuffer * 2)
       );
+
       let canMoveHorizontally = true;
       let steppedUp = false;
+
       if (dX !== 0 || dZ !== 0) {
         for (const mesh of collidableMeshes) {
           const meshBoundingBox = collisionBoundingBoxes.get(mesh.name);
-          if (
-            meshBoundingBox &&
-            !meshBoundingBox.isEmpty() &&
-            player.boundingBox.intersectsBox(meshBoundingBox)
-          ) {
+          if (meshBoundingBox && !meshBoundingBox.isEmpty() && player.boundingBox.intersectsBox(meshBoundingBox)) {
             let didStep = false;
+            // Cek step-up
             const headClearOrigin = player.position.clone();
-            headClearOrigin.x +=
-              _movementDirection.x * playerRadiusBuffer * 0.5;
-            headClearOrigin.z +=
-              _movementDirection.z * playerRadiusBuffer * 0.5;
-            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1;
-            raycaster.set(headClearOrigin, _movementDirection);
+            headClearOrigin.x += _movementDirection.x * playerRadiusBuffer * 0.5;
+            headClearOrigin.z += _movementDirection.z * playerRadiusBuffer * 0.5;
+            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1; // Cek dari atas max step height
+
+            raycaster.set(headClearOrigin, _movementDirection); // Raycast ke arah gerakan dari atas
             raycaster.far = playerRadiusBuffer;
-            if (raycaster.intersectObject(mesh, true).length === 0) {
-              const stepSurfaceOrigin = new THREE.Vector3(
-                tempPos.x,
-                player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS,
-                tempPos.z
-              );
-              raycaster.set(stepSurfaceOrigin, new THREE.Vector3(0, -1, 0));
-              raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
-              const stepHits = raycaster.intersectObject(mesh, true);
-              if (stepHits.length > 0) {
-                const yDiff =
-                  stepHits[0].point.y +
-                  PLAYER_COLLISION_HEIGHT / 2 -
-                  player.position.y;
-                if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) {
-                  player.position.set(
-                    tempPos.x,
-                    stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2,
-                    tempPos.z
-                  );
-                  player.isGrounded = true;
-                  player.velocity.y = 0;
-                  steppedUp = true;
-                  didStep = true;
-                  break;
+
+            if (raycaster.intersectObject(mesh, true).length === 0) { // Jika tidak ada halangan di atas kepala
+                const stepSurfaceOrigin = new THREE.Vector3(tempPos.x, player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS, tempPos.z);
+                raycaster.set(stepSurfaceOrigin, new THREE.Vector3(0, -1, 0)); // Raycast ke bawah dari atas step
+                raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
+                const stepHits = raycaster.intersectObject(mesh, true);
+
+                if (stepHits.length > 0) {
+                    const yDiff = stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2 - player.position.y;
+                    if (yDiff >= -0.01 && yDiff <= MAX_STEP_HEIGHT) {
+                        player.position.set(tempPos.x, stepHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2, tempPos.z);
+                        player.isGrounded = true;
+                        player.velocity.y = 0;
+                        steppedUp = true;
+                        didStep = true;
+                        break;
+                    }
                 }
-              }
             }
             if (!didStep) {
               canMoveHorizontally = false;
@@ -1034,79 +880,61 @@ function updatePlayerAndCamera(deltaTime) {
           }
         }
       }
+
       if (!steppedUp && canMoveHorizontally) {
         player.position.x = tempPos.x;
         player.position.z = tempPos.z;
       }
+
       camRef.position.set(
         player.position.x,
         player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
         player.position.z
       );
     }
-  } else {
+  } else { // Jika kontrol tidak terkunci (misalnya, menu pause)
     player.velocity.x = 0;
     player.velocity.z = 0;
+    // Tetap terapkan gravitasi jika tidak ghost mode dan tidak di tanah
     if (!isGhostMode && !player.isGrounded) {
-      player.velocity.y -= GRAVITY * deltaTime;
-      player.position.y += player.velocity.y * deltaTime;
-      const groundRayOrigin = new THREE.Vector3(
-        player.position.x,
-        player.position.y + PLAYER_FEET_RADIUS * 0.5,
-        player.position.z
-      );
-      raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
-      raycaster.far = Math.max(
-        PLAYER_FEET_RADIUS * 1.1,
-        Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS
-      );
-      const groundHits = raycaster.intersectObjects(collidableMeshes, true);
-      if (
-        player.velocity.y <= 0 &&
-        groundHits.length > 0 &&
-        groundHits[0].distance <= PLAYER_FEET_RADIUS * 1.01
-      ) {
-        player.position.y = groundHits[0].point.y + PLAYER_COLLISION_HEIGHT / 2;
-        player.velocity.y = 0;
-        player.isGrounded = true;
-      }
-      controls
-        .getObject()
-        .position.set(
-          player.position.x,
-          player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
-          player.position.z
+        player.velocity.y -= GRAVITY * deltaTime;
+        player.position.y += player.velocity.y * deltaTime;
+        // Ground check sederhana
+        const groundRayOriginPaused = player.position.clone();
+        groundRayOriginPaused.y += PLAYER_FEET_RADIUS * 0.5;
+        raycaster.set(groundRayOriginPaused, new THREE.Vector3(0, -1, 0));
+        raycaster.far = Math.max(PLAYER_FEET_RADIUS * 1.1, Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS);
+        const groundHitsPaused = raycaster.intersectObjects(collidableMeshes, true);
+        if (player.velocity.y <= 0 && groundHitsPaused.length > 0 && groundHitsPaused[0].distance <= PLAYER_FEET_RADIUS * 1.01) {
+            player.position.y = groundHitsPaused[0].point.y + PLAYER_COLLISION_HEIGHT / 2;
+            player.velocity.y = 0;
+            player.isGrounded = true;
+        }
+        // Update posisi kamera agar tetap sinkron
+        controls.getObject().position.set(
+            player.position.x,
+            player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
+            player.position.z
         );
     }
   }
 
-  if (
-    isTVOn &&
-    staticTexture &&
-    tvScreenMesh &&
-    staticTVMaterial === tvScreenMesh.material
-  ) {
-    staticTexture.offset.x =
-      (((staticTexture.offset.x + (Math.random() * 0.1 - 0.05)) % 1) + 1) % 1;
-    staticTexture.offset.y =
-      (((staticTexture.offset.y + (Math.random() * 0.1 - 0.05)) % 1) + 1) % 1;
+  // Update TV static
+  if ( isTVOn && staticTexture && tvScreenMesh && staticTVMaterial === tvScreenMesh.material) {
+    staticTexture.offset.x = (((staticTexture.offset.x + (Math.random() * 0.1 - 0.05)) % 1) + 1) % 1;
+    staticTexture.offset.y = (((staticTexture.offset.y + (Math.random() * 0.1 - 0.05)) % 1) + 1) % 1;
   }
-  if (
-    isSteamActive &&
-    steamObject &&
-    originalSteamPosition &&
-    steamObject.material
-  ) {
+
+  // Update steam animation
+  if (isSteamActive && steamObject && originalSteamPosition && steamObject.material) {
     steamAnimationTime += deltaTime;
-    let loopProgress =
-      (steamAnimationTime % STEAM_LOOP_DURATION) / STEAM_LOOP_DURATION;
+    let loopProgress = (steamAnimationTime % STEAM_LOOP_DURATION) / STEAM_LOOP_DURATION;
     steamObject.position.set(
       originalSteamPosition.x,
       originalSteamPosition.y + loopProgress * STEAM_MAX_HEIGHT_OFFSET,
       originalSteamPosition.z
     );
-    if (steamObject.material)
-      steamObject.material.opacity = originalSteamOpacity * (1 - loopProgress);
+    if (steamObject.material) steamObject.material.opacity = originalSteamOpacity * (1 - loopProgress);
   }
   updatePaperAnimation(deltaTime);
 }
@@ -1127,14 +955,6 @@ function animate() {
 
   if (sonicModel && sonicBasePosition) {
     sonicModel.position.copy(sonicBasePosition).add(sonicPositionOffset);
-  }
-
-  if (sonicBoundingBoxHelper && sonicModel) {
-    // Update bounding box helper if adjust mode is active
-    const sonicBox = new THREE.Box3().setFromObject(sonicModel);
-    if (!sonicBox.isEmpty()) {
-      sonicBoundingBoxHelper.box.copy(sonicBox);
-    }
   }
 
   renderer.render(scene, camera);
