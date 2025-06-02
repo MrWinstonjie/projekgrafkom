@@ -66,6 +66,7 @@ const OBJECT3_NAME = "Object_3";
 const raycaster = new THREE.Raycaster();
 const interactionRaycaster = new THREE.Raycaster();
 const collidableMeshes = [];
+// Daftar nama objek yang diperbarui untuk collidables
 const collidableObjectNames = [
   "Object_13108",
   "Object_13105",
@@ -79,9 +80,26 @@ const collidableObjectNames = [
   "Object_20",
   "Object_25",
   "Object_24",
+  "model_0003",
+  "model_0005",
+  "model_0006",
+  "model_0009",
   "model_0010",
+  "model_0011",
+  "model_0012",
+  "model_0013",
   "model_0014",
+  "model_0015",
+  "model_0016",
+  "model_0017",
+  "model_0018",
+  "model_0019",
+  "model_0020",
   "model_0022",
+  "model_0024",
+  "model_0025",
+  "model_0026",
+  "model_0027",
   "model_0029",
   "model_0030",
   "model_0034",
@@ -89,39 +107,31 @@ const collidableObjectNames = [
   "model_0042",
   "model_0047",
   "model_0050",
-  "model_0058",
+  "model_0053",
+  "model_0061",
+  "model_0062",
+  "model_0066",
+  "model_0076",
   "model_0080",
   "model_0085",
   "model_0100",
+  "model_0119",
+  "model_0139",
+  "model_0167",
   "model_0197",
-  "model_0002",
-  "model_0003",
-  "model_0005",
-  "model_0006",
-  "model_0009",
-  "model_0011",
-  "model_0012",
-  "model_0015",
-  "model_0016",
-  "model_0017",
-  "model_0018",
-  "model_0020",
-  "model_0021",
-  "model_0025",
-  "model_0026",
 ];
 const interactiveObjectNames = [
   "Object_13108",
   "Object_23",
   "Object_18",
   "Object_23025",
-  "Object_16", // <<<--- TAMBAHKAN Object_16 DI SINI
+  "Object_16",
+  "Object_14",
 ];
 const collisionBoundingBoxes = new Map();
 
 // --- UI Elements ---
-const blocker = document.getElementById("blocker");
-const instructions = document.getElementById("instructions");
+let blocker, instructions, controlsHelpElement;
 
 // --- Helper Vectors ---
 const _worldDirection = new THREE.Vector3();
@@ -129,6 +139,7 @@ const _movementDirection = new THREE.Vector3();
 const _upVector = new THREE.Vector3(0, 1, 0);
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
+const _tempVec = new THREE.Vector3();
 
 // --- TV, Steam, Paper variables ---
 let tvScreenMesh, originalTVMaterial, staticTVMaterial, staticTexture;
@@ -146,8 +157,66 @@ const PAPER_ANIMATION_DURATION = 1.0;
 let paperTargetOpacity = 0,
   paperCurrentOpacity = 0;
 
+// --- Dynamic Falling Objects --- (Nama diubah dari STATIC_FALL_OBJECT_NAMES untuk konsistensi dengan logika)
+// Daftar nama objek yang diperbarui untuk dynamic fall
+const DYNAMIC_FALL_OBJECT_NAMES = [
+  "model_0003",
+  "model_0005",
+  "model_0006",
+  "model_0009",
+  "model_0010",
+  "model_0011",
+  "model_0012",
+  "model_0013",
+  "model_0014",
+  "model_0015",
+  "model_0016",
+  "model_0017",
+  "model_0018",
+  "model_0019",
+  "model_0020",
+  "model_0022",
+  "model_0024",
+  "model_0025",
+  "model_0026",
+  "model_0027",
+  "model_0029",
+  "model_0030",
+  "model_0034",
+  "model_0040",
+  "model_0042",
+  "model_0047",
+  "model_0050",
+  "model_0053",
+  "model_0061",
+  "model_0062",
+  "model_0066",
+  "model_0076",
+  "model_0080",
+  "model_0085",
+  "model_0100",
+  "model_0119",
+  "model_0139",
+  "model_0167",
+  "model_0197",
+];
+let dynamicFallObjectsData = [];
+let isDynamicFallActive = false;
+let object14Triggered = false;
+
+const OBJECT_LOCAL_GRAVITY_FALL = 300.0;
+const INITIAL_FALL_HORIZONTAL_DRIFT_MAX = 50.0; // Tambahkan drift horizontal untuk variasi arah
+const INITIAL_FALL_ANGULAR_VELOCITY_MAX_RAD = 0.0;
+const MIN_Y_THRESHOLD_LOCAL = -8000.0;
+const FALL_DELAY_MAX = 2.0; // Delay maksimum antara objek jatuh (dalam detik)
+
 function init() {
   console.log("Init function started.");
+
+  blocker = document.getElementById("blocker");
+  instructions = document.getElementById("instructions");
+  controlsHelpElement = document.getElementById("controls-help");
+
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb);
   camera = new THREE.PerspectiveCamera(
@@ -167,25 +236,25 @@ function init() {
   document.body.appendChild(renderer.domElement);
 
   controls = new PointerLockControls(camera, document.body);
-  if (instructions)
+  if (instructions) {
     instructions.addEventListener("click", () => controls.lock());
+  } else {
+    console.warn("Element 'instructions' tidak ditemukan di DOM.");
+  }
+
   controls.addEventListener("lock", () => {
     if (instructions) instructions.style.display = "none";
     if (blocker) blocker.style.display = "none";
-    const controlsHelp = document.getElementById("controls-help");
-    if (controlsHelp) controlsHelp.style.display = "block";
+    if (controlsHelpElement) controlsHelpElement.style.display = "block";
   });
   controls.addEventListener("unlock", () => {
     if (blocker) blocker.style.display = "flex";
     if (instructions) instructions.style.display = "";
-    const controlsHelp = document.getElementById("controls-help");
-    if (controlsHelp) controlsHelp.style.display = "none";
+    if (controlsHelpElement) controlsHelpElement.style.display = "none";
   });
-  const controlsHelp = document.getElementById("controls-help");
-  if (controlsHelp) controlsHelp.style.display = "none";
+  if (controlsHelpElement) controlsHelpElement.style.display = "none";
 
-  loadEXRBackground("background.exr");
-
+  // loadEXRBackground("background.exr");
   setupLighting();
 
   const textureLoader = new THREE.TextureLoader();
@@ -242,7 +311,7 @@ function init() {
   labLoader.load(
     "EDGEHOG ISLAND LABOLATORY.glb",
     (gltf) => {
-      console.log("Main lab model (with integrated bridge) GLTF loaded.");
+      console.log("Main lab model GLTF loaded.");
       model = gltf.scene;
       const labModelScale = 0.05;
       model.scale.set(labModelScale, labModelScale, labModelScale);
@@ -252,12 +321,17 @@ function init() {
           child.castShadow = true;
           child.receiveShadow = true;
           if (collidableObjectNames.includes(child.name)) {
-            collidableMeshes.push(child);
-            collisionBoundingBoxes.set(
-              child.name,
-              new THREE.Box3().setFromObject(child)
-            );
-            // console.log(`Added ${child.name} to collidables with BBox.`); // Optional: uncomment for debugging
+            // Objek yang termasuk DYNAMIC_FALL_OBJECT_NAMES akan dihapus dari collidables saat object14Triggered
+            if (
+              !DYNAMIC_FALL_OBJECT_NAMES.includes(child.name) ||
+              !object14Triggered
+            ) {
+              collidableMeshes.push(child);
+              collisionBoundingBoxes.set(
+                child.name,
+                new THREE.Box3().setFromObject(child)
+              );
+            }
           }
 
           if (child.name === "Object_23045") {
@@ -274,17 +348,41 @@ function init() {
       });
       scene.add(model);
 
+      dynamicFallObjectsData = [];
+      DYNAMIC_FALL_OBJECT_NAMES.forEach((name, index) => {
+        const obj = model.getObjectByName(name);
+        if (obj) {
+          dynamicFallObjectsData.push({
+            mesh: obj,
+            initialPosition: obj.position.clone(),
+            initialRotation: obj.rotation.clone(),
+            velocity: new THREE.Vector3(),
+            angularVelocity: new THREE.Vector3(),
+            isFalling: false,
+            hasLanded: false,
+            fallDelay: Math.random() * FALL_DELAY_MAX, // Random delay untuk setiap objek
+            delayTimer: 0,
+            horizontalDirection: new THREE.Vector3(
+              (Math.random() - 0.5) * 2, // Random X direction (-1 to 1)
+              0,
+              (Math.random() - 0.5) * 2 // Random Z direction (-1 to 1)
+            ).normalize(),
+          });
+        } else {
+          console.warn(
+            `Dynamic fall object candidate "${name}" not found in the model.`
+          );
+        }
+      });
+
       object3Mesh = model.getObjectByName(OBJECT3_NAME);
       if (object3Mesh && object3Mesh.isMesh) {
-        console.log(`${OBJECT3_NAME} found.`);
-        if (object3Mesh.material) {
-          originalObject3Material = object3Mesh.material.clone();
-        } else {
-          originalObject3Material = new THREE.MeshStandardMaterial({
-            color: 0xcccccc,
-          });
+        originalObject3Material = object3Mesh.material
+          ? object3Mesh.material.clone()
+          : new THREE.MeshStandardMaterial({ color: 0xcccccc });
+        if (object3Mesh.material)
           object3Mesh.material = originalObject3Material.clone();
-        }
+        else object3Mesh.material = originalObject3Material;
         glowingObject3Material = new THREE.MeshStandardMaterial({
           emissive: 0xffff00,
           emissiveIntensity: 1.5,
@@ -314,7 +412,7 @@ function init() {
         targetObject.getWorldPosition(player.position);
         player.position.y = boundingBox.max.y;
       } else {
-        player.position.set(0, PLAYER_COLLISION_HEIGHT / 2, 5);
+        player.position.set(0, PLAYER_COLLISION_HEIGHT / 2 + 50, 5);
       }
       player.isGrounded = true;
       controls
@@ -343,57 +441,39 @@ function init() {
 
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
-  7;
   window.addEventListener("resize", onWindowResize, false);
   console.log("Init function finished.");
 }
 
 function setupLighting() {
-  // Mengurangi intensitas ambient light jika environment map sudah cukup terang
-  scene.add(new THREE.AmbientLight(0xffffff, 0.02)); // Coba 0.3 - 0.5
-
-  const dirLight = new THREE.DirectionalLight(0xffffff, 2.0); // Intensitas bisa disesuaikan (misal 1.5 - 2.5)
-  dirLight.position.set(50, 80, 40); // Sesuaikan posisi untuk arah bayangan yang diinginkan
+  scene.add(new THREE.AmbientLight(0xffffff, 0.02));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+  dirLight.position.set(50, 80, 40);
   dirLight.castShadow = true;
-  dirLight.shadow.mapSize.width = 2048; // Resolusi peta bayangan
+  dirLight.shadow.mapSize.width = 2048;
   dirLight.shadow.mapSize.height = 2048;
-
-  // Mengatur frustum kamera bayangan agar lebih pas dengan scene
-  const shadowCamSize = 150; // PERKIRAAN: Sesuaikan dengan ukuran scene Anda yang terlihat
+  const shadowCamSize = 150;
   dirLight.shadow.camera.left = -shadowCamSize;
   dirLight.shadow.camera.right = shadowCamSize;
   dirLight.shadow.camera.top = shadowCamSize;
   dirLight.shadow.camera.bottom = -shadowCamSize;
   dirLight.shadow.camera.near = 0.5;
-  dirLight.shadow.camera.far = 500; // Sesuaikan far plane kamera bayangan
-  dirLight.shadow.bias = -0.0005; // Titik awal yang baik untuk bias
-  // dirLight.shadow.radius = 4; // Untuk PCFSoftShadowMap atau VSMShadowMap, mengontrol kelembutan (jika didukung dan diinginkan)
-
+  dirLight.shadow.camera.far = 500;
+  dirLight.shadow.bias = -0.0005;
   scene.add(dirLight);
-  scene.add(dirLight.target); // Pastikan target ada di scene jika Anda memindahkannya
-
-  // Helper untuk visualisasi kamera bayangan (hapus/komentari untuk produksi)
-  // const shadowHelper = new THREE.CameraHelper(dirLight.shadow.camera);
-  // scene.add(shadowHelper);
-  // const lightHelper = new THREE.DirectionalLightHelper(dirLight, 5);
-  // scene.add(lightHelper);
+  scene.add(dirLight.target);
 }
 
 function loadEXRBackground(filePath) {
   if (!scene || !renderer) {
-    console.error(
-      "Scene or Renderer is not initialized yet. Cannot load EXR background."
-    );
+    console.error("Scene or Renderer not initialized for EXR.");
     return;
   }
-
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
   pmremGenerator.compileEquirectangularShader();
-
   new EXRLoader().load(
     filePath,
     (texture) => {
-      console.log(`EXR background loaded from ${filePath}`);
       const envMap = pmremGenerator.fromEquirectangular(texture).texture;
       scene.background = envMap;
       scene.environment = envMap;
@@ -401,11 +481,9 @@ function loadEXRBackground(filePath) {
       pmremGenerator.dispose();
       console.log("EXR background and environment map set.");
     },
-    (xhr) => {
-      console.log(`EXR background loading: ${(xhr.loaded / xhr.total) * 100}%`);
-    },
+    (xhr) => console.log(`EXR loading: ${(xhr.loaded / xhr.total) * 100}%`),
     (error) => {
-      console.error(`Error loading EXR background from ${filePath}:`, error);
+      console.error(`Error loading EXR: ${filePath}:`, error);
       pmremGenerator.dispose();
     }
   );
@@ -413,113 +491,82 @@ function loadEXRBackground(filePath) {
 
 function loadSonicModel() {
   if (!SONIC_MODEL_PATH) {
-    console.warn("Sonic model path is not defined.");
+    console.warn("Sonic model path undefined.");
     return;
   }
   const loader = new GLTFLoader();
   loader.load(
     SONIC_MODEL_PATH,
     (gltf) => {
-      console.log("DEBUG: GLTF Sonic loaded successfully into gltf object.");
       sonicModel = gltf.scene;
       if (!sonicModel) {
-        console.error(
-          "CRITICAL DEBUG: sonicModel is undefined after GLTF load!"
-        );
+        console.error("Sonic model undefined after load!");
         return;
       }
       sonicModel.name = "SonicTheHedgehog_DEBUG";
-
-      const FORCED_DEBUG_SCALE = SONIC_SCALE_IN_LAB; // Menggunakan variabel yang sudah ada
       sonicModel.scale.set(
-        FORCED_DEBUG_SCALE,
-        FORCED_DEBUG_SCALE,
-        FORCED_DEBUG_SCALE
+        SONIC_SCALE_IN_LAB,
+        SONIC_SCALE_IN_LAB,
+        SONIC_SCALE_IN_LAB
       );
-      console.log(`DEBUG: Sonic scale set to: ${FORCED_DEBUG_SCALE}`);
 
       let sonicTargetPosition = new THREE.Vector3();
       let positionSetByTargetObject = false;
-
       if (model && SONIC_SPAWN_TARGET_OBJECT_NAME) {
         const targetObject = model.getObjectByName(
           SONIC_SPAWN_TARGET_OBJECT_NAME
         );
         if (targetObject) {
-          console.log(
-            `DEBUG: Found target object for Sonic spawn: ${SONIC_SPAWN_TARGET_OBJECT_NAME}`
-          );
           targetObject.updateWorldMatrix(true, true);
           const targetBoundingBox = new THREE.Box3().setFromObject(
             targetObject
           );
-
           if (!targetBoundingBox.isEmpty()) {
-            const targetWorldCenter = new THREE.Vector3();
-            targetBoundingBox.getCenter(targetWorldCenter);
-            sonicTargetPosition.x = targetWorldCenter.x + SONIC_SPAWN_X_OFFSET;
-            sonicTargetPosition.y =
-              targetBoundingBox.max.y + SONIC_SPAWN_Y_OFFSET;
-            sonicTargetPosition.z = targetWorldCenter.z + SONIC_SPAWN_Z_OFFSET;
-          } else {
-            console.warn(
-              `DEBUG: Target object ${SONIC_SPAWN_TARGET_OBJECT_NAME} bounding box is empty. Using its origin + offsets.`
+            targetBoundingBox.getCenter(_tempVec);
+            sonicTargetPosition.set(
+              _tempVec.x + SONIC_SPAWN_X_OFFSET,
+              targetBoundingBox.max.y + SONIC_SPAWN_Y_OFFSET,
+              _tempVec.z + SONIC_SPAWN_Z_OFFSET
             );
+          } else {
             targetObject.getWorldPosition(sonicTargetPosition);
-            sonicTargetPosition.x += SONIC_SPAWN_X_OFFSET;
-            sonicTargetPosition.y += SONIC_SPAWN_Y_OFFSET;
-            sonicTargetPosition.z += SONIC_SPAWN_Z_OFFSET;
+            sonicTargetPosition.add(
+              new THREE.Vector3(
+                SONIC_SPAWN_X_OFFSET,
+                SONIC_SPAWN_Y_OFFSET,
+                SONIC_SPAWN_Z_OFFSET
+              )
+            );
           }
           positionSetByTargetObject = true;
         } else {
           console.warn(
-            `CRITICAL DEBUG: Target object "${SONIC_SPAWN_TARGET_OBJECT_NAME}" for Sonic spawn not found. Using fallback.`
+            `Target "${SONIC_SPAWN_TARGET_OBJECT_NAME}" for Sonic not found.`
           );
         }
       }
-
       if (!positionSetByTargetObject) {
-        console.log(
-          "DEBUG: Using camera-relative fallback for Sonic position."
-        );
-        if (camera) {
-          const cameraWorldPos = new THREE.Vector3();
-          camera.getWorldPosition(cameraWorldPos);
-          const cameraWorldDir = new THREE.Vector3();
-          camera.getWorldDirection(cameraWorldDir);
-          sonicTargetPosition = cameraWorldPos
-            .clone()
-            .add(cameraWorldDir.multiplyScalar(-10)); // Jarak fallback dari kamera
-        } else {
-          sonicTargetPosition.set(0, FORCED_DEBUG_SCALE * 0.1, 0); // Posisi default jika kamera belum siap
-          console.warn(
-            "CRITICAL DEBUG: Camera object not ready for Sonic spawn fallback, using specified default."
-          );
-        }
+        if (camera)
+          camera
+            .getWorldPosition(sonicTargetPosition)
+            .add(camera.getWorldDirection(_tempVec).multiplyScalar(-10));
+        else sonicTargetPosition.set(0, SONIC_SCALE_IN_LAB * 0.1, 0);
       }
-
       sonicModel.position.copy(sonicTargetPosition);
-      console.log("DEBUG: Sonic initial world position:", sonicModel.position);
-
       sonicBasePosition.copy(sonicModel.position);
       sonicPositionOffset.set(0, 0, 0);
-      console.log(
-        "DEBUG: Sonic base position for adjustment saved:",
-        sonicBasePosition
-      );
 
       sonicModel.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
           child.visible = true;
           if (child.material) {
-            const applyChanges = (material) => {
-              if (material.map) material.map.colorSpace = THREE.SRGBColorSpace;
-              if (material.emissiveMap)
-                material.emissiveMap.colorSpace = THREE.SRGBColorSpace;
-              if (material.transparent && material.opacity < 0.1)
-                material.opacity = 1.0;
-              material.needsUpdate = true;
+            const applyChanges = (mat) => {
+              if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+              if (mat.emissiveMap)
+                mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+              if (mat.transparent && mat.opacity < 0.1) mat.opacity = 1.0;
+              mat.needsUpdate = true;
             };
             if (Array.isArray(child.material))
               child.material.forEach(applyChanges);
@@ -527,50 +574,39 @@ function loadSonicModel() {
           }
         }
       });
-
-      if (scene) {
-        scene.add(sonicModel);
-        console.log("DEBUG: sonicModel was added to scene.");
-      } else {
-        console.error(
-          "CRITICAL DEBUG: Scene is undefined when trying to add sonicModel!"
-        );
+      if (scene) scene.add(sonicModel);
+      else {
+        console.error("Scene undefined for Sonic model!");
         return;
       }
-
-      // Bounding box helper untuk Sonic tidak lagi ditambahkan ke scene
-      // console.log("DEBUG: Sonic bounding box helper is intentionally not added.");
 
       sonicAnimationClips = gltf.animations;
       if (sonicAnimationClips && sonicAnimationClips.length) {
         sonicMixer = new THREE.AnimationMixer(sonicModel);
-        console.log("Sonic model has animations, ready to be played.");
-        // Animasi tidak dimainkan secara default di sini, hanya disiapkan
+        console.log("Sonic animations ready.");
       } else {
         console.log("Sonic model has no animations.");
       }
     },
     (xhr) =>
       console.log(`Sonic Model: ${(xhr.loaded / xhr.total) * 100}% loaded`),
-    (error) => console.error("CRITICAL DEBUG: Sonic GLTF Loading Error:", error)
+    (error) => console.error("Sonic GLTF Loading Error:", error)
   );
 }
 
 function logSonicAdjustedPosition() {
   if (sonicModel && sonicBasePosition) {
-    const adjustedPos = new THREE.Vector3()
-      .copy(sonicBasePosition)
-      .add(sonicPositionOffset);
+    const adjPos = sonicBasePosition.clone().add(sonicPositionOffset);
     console.log(
-      `Sonic Offset: {x: ${sonicPositionOffset.x.toFixed(
+      `Sonic Offset: {x:${sonicPositionOffset.x.toFixed(
         2
-      )}, y: ${sonicPositionOffset.y.toFixed(
+      )},y:${sonicPositionOffset.y.toFixed(
         2
-      )}, z: ${sonicPositionOffset.z.toFixed(
+      )},z:${sonicPositionOffset.z.toFixed(
         2
-      )}}. New World Pos: {x: ${adjustedPos.x.toFixed(
+      )}}. New World Pos: {x:${adjPos.x.toFixed(2)},y:${adjPos.y.toFixed(
         2
-      )}, y: ${adjustedPos.y.toFixed(2)}, z: ${adjustedPos.z.toFixed(2)}}`
+      )},z:${adjPos.z.toFixed(2)}}`
     );
   }
 }
@@ -580,40 +616,24 @@ function toggleSonicAnimation() {
     !sonicModel ||
     !sonicMixer ||
     !sonicAnimationClips ||
-    sonicAnimationClips.length === 0
+    !sonicAnimationClips.length
   ) {
-    console.log("Sonic model or animations not ready to toggle.");
+    console.log("Sonic not ready to animate.");
     return;
   }
-
   if (isSonicAnimationPlaying) {
-    if (currentSonicAnimationAction) {
-      currentSonicAnimationAction.stop();
-      console.log("Sonic animation stopped.");
-    }
+    if (currentSonicAnimationAction) currentSonicAnimationAction.stop();
     isSonicAnimationPlaying = false;
+    console.log("Sonic animation stopped.");
   } else {
-    // Coba cari animasi bernama "spin", lalu "idle", atau ambil yang pertama jika tidak ada
-    let animToPlay =
-      sonicAnimationClips.find((clip) =>
-        clip.name.toLowerCase().includes("spin")
-      ) ||
-      sonicAnimationClips.find(
-        (clip) => clip.name.toLowerCase().includes("idle") // Tambahkan pencarian untuk "idle"
-      ) ||
-      sonicAnimationClips[0]; // Fallback ke animasi pertama
-
-    if (animToPlay) {
-      currentSonicAnimationAction = sonicMixer.clipAction(animToPlay);
-      currentSonicAnimationAction.reset().play();
-      // Untuk loop: currentSonicAnimationAction.setLoop(THREE.LoopRepeat); (defaultnya sudah repeat)
-      // Untuk sekali jalan:
-      // currentSonicAnimationAction.setLoop(THREE.LoopOnce);
-      // currentSonicAnimationAction.clampWhenFinished = true;
-      console.log(`Playing Sonic animation: ${animToPlay.name}`);
-    } else {
-      console.log("No suitable animation found for Sonic to play.");
-    }
+    let anim =
+      sonicAnimationClips.find((c) => c.name.toLowerCase().includes("spin")) ||
+      sonicAnimationClips.find((c) => c.name.toLowerCase().includes("idle")) ||
+      sonicAnimationClips[0];
+    if (anim) {
+      currentSonicAnimationAction = sonicMixer.clipAction(anim).reset().play();
+      console.log(`Playing Sonic animation: ${anim.name}`);
+    } else console.log("No suitable Sonic animation found.");
     isSonicAnimationPlaying = true;
   }
 }
@@ -639,42 +659,28 @@ function onKeyDown(event) {
       keys.SPACE = true;
       break;
     case "KeyE":
-      keys.E_INTERACT = true; // Set state E_INTERACT di sini
-      if (controls.isLocked) handleInteraction(); // Panggil handleInteraction jika kontrol terkunci
+      keys.E_INTERACT = true;
+      if (controls.isLocked) handleInteraction();
       break;
     case "KeyQ":
       if (isGhostMode) keys.Q_GHOST_DOWN = true;
       break;
     case "KeyG":
       if (!keys.G) {
-        // Hanya toggle jika G belum ditekan (mencegah toggle cepat saat ditahan)
         isGhostMode = !isGhostMode;
         console.log("Ghost Mode:", isGhostMode ? "ON" : "OFF");
-        if (isGhostMode) player.velocity.y = 0; // Hentikan gerakan vertikal saat masuk ghost mode
+        if (isGhostMode) player.velocity.y = 0;
       }
-      keys.G = true; // Tandai G sebagai ditekan
+      keys.G = true;
       break;
-
-    case "KeyT": // 'T' tetap untuk toggle animasi Sonic secara manual jika diperlukan (untuk debug)
-      if (sonicModel) {
-        toggleSonicAnimation();
-      }
+    case "KeyT":
+      if (sonicModel) toggleSonicAnimation();
       break;
-
     case "KeyP":
       if (sonicModel) {
         isSonicAdjustMode = !isSonicAdjustMode;
         console.log("Sonic Adjust Mode:", isSonicAdjustMode ? "ON" : "OFF");
-        if (isSonicAdjustMode) {
-          console.log(
-            "Use J/L (X), U/O (Y), I/K (Z) to adjust Sonic. Current offset:",
-            sonicPositionOffset
-          );
-          const currentSonicPos = new THREE.Vector3()
-            .copy(sonicBasePosition)
-            .add(sonicPositionOffset);
-          console.log("Sonic current world position:", currentSonicPos);
-        }
+        if (isSonicAdjustMode) logSonicAdjustedPosition();
       }
       break;
     case "KeyJ":
@@ -738,13 +744,13 @@ function onKeyUp(event) {
       break;
     case "KeyE":
       keys.E_INTERACT = false;
-      break; // Reset state E_INTERACT di sini
+      break;
     case "KeyQ":
       keys.Q_GHOST_DOWN = false;
       break;
     case "KeyG":
       keys.G = false;
-      break; // Reset state G saat dilepas
+      break;
   }
 }
 
@@ -753,7 +759,7 @@ function startPaperAnimation(showTexture) {
     paperAnimationActive = true;
     paperAnimationTime = 0;
     paperTargetOpacity = showTexture ? 1.0 : 0.0;
-    paperCurrentOpacity = showTexture ? 0.0 : 1.0; // Mulai dari opacity yang sesuai
+    paperCurrentOpacity = showTexture ? 0.0 : 1.0;
     if (showTexture && paperMesh && paperPrintMaterial) {
       paperMesh.material = paperPrintMaterial;
       if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity;
@@ -763,8 +769,7 @@ function startPaperAnimation(showTexture) {
       paperPrintMaterial &&
       paperMesh.material === paperPrintMaterial
     ) {
-      // Jika menyembunyikan dan material saat ini adalah print, kita akan memudarkannya
-      if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity; // Seharusnya 1.0
+      if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity;
     }
   }
 }
@@ -776,10 +781,8 @@ function updatePaperAnimation(deltaTime) {
       paperAnimationTime / PAPER_ANIMATION_DURATION,
       1.0
     );
-    // Simple linear interpolation for opacity
     paperCurrentOpacity =
       paperTargetOpacity === 1.0 ? progress : 1.0 - progress;
-
     if (
       paperMesh &&
       paperPrintMaterial &&
@@ -787,18 +790,17 @@ function updatePaperAnimation(deltaTime) {
     ) {
       if (paperMesh.material) paperMesh.material.opacity = paperCurrentOpacity;
     }
-
     if (progress >= 1.0) {
       paperAnimationActive = false;
-      if (paperTargetOpacity === 0 && paperMesh && originalPaperMaterial) {
-        paperMesh.material = originalPaperMaterial; // Kembali ke material asli setelah fade out
-      } else if (
+      if (paperTargetOpacity === 0 && paperMesh && originalPaperMaterial)
+        paperMesh.material = originalPaperMaterial;
+      else if (
         paperTargetOpacity === 1.0 &&
         paperMesh &&
-        paperPrintMaterial
-      ) {
-        if (paperMesh.material) paperMesh.material.opacity = 1.0; // Pastikan opacity 1 di akhir fade in
-      }
+        paperPrintMaterial &&
+        paperMesh.material
+      )
+        paperMesh.material.opacity = 1.0;
     }
   }
 }
@@ -810,44 +812,32 @@ function handleInteraction() {
     const obj = model.getObjectByName(name);
     if (obj) interactableSceneObjects.push(obj);
   });
-
-  // Pastikan objek yang akan di-intersect adalah mesh atau group yang visible
   const actualInteractables = interactableSceneObjects.filter(
     (obj) =>
       obj &&
       obj.visible &&
       (obj.isMesh || obj.isGroup || obj.children.length > 0)
   );
-
   if (actualInteractables.length === 0) return;
 
   const intersects = interactionRaycaster.intersectObjects(
     actualInteractables,
-    true // recursive
+    true
   );
-
   if (intersects.length > 0 && intersects[0].distance < INTERACTION_DISTANCE) {
     const intersectedRawObject = intersects[0].object;
     let interactiveObjectName = intersectedRawObject.name;
-
-    // Traverse up untuk menemukan parent yang ada di interactiveObjectNames jika mesh yang di-klik adalah child
     let current = intersectedRawObject;
     while (current && !interactiveObjectNames.includes(current.name)) {
       current = current.parent;
       if (current && current.isScene) {
-        // Jangan sampai ke root scene
         current = null;
         break;
       }
     }
-    if (current) {
-      // Jika parent yang interaktif ditemukan
-      interactiveObjectName = current.name;
-    } else if (!interactiveObjectNames.includes(intersectedRawObject.name)) {
-      // Jika raw object itu sendiri tidak interaktif dan tidak ada parent interaktif
+    if (current) interactiveObjectName = current.name;
+    else if (!interactiveObjectNames.includes(intersectedRawObject.name))
       return;
-    }
-    // Jika raw object itu sendiri interaktif, interactiveObjectName sudah benar.
 
     console.log("Interacting with:", interactiveObjectName);
 
@@ -863,17 +853,17 @@ function handleInteraction() {
           ? glowingObject3Material
           : originalObject3Material;
         console.log(
-          OBJECT3_NAME + " Light Toggled:",
+          `${OBJECT3_NAME} Light Toggled:`,
           isObject3On ? "ON (Yellow)" : "OFF"
         );
       }
     } else if (
       (interactiveObjectName === "Object_23" ||
-        interactiveObjectName === "Object_23025") && // Object_23025 adalah mesh kertas
+        interactiveObjectName === "Object_23025") &&
       paperMesh &&
       originalPaperMaterial &&
       paperPrintMaterial &&
-      !paperAnimationActive // Hanya jika tidak ada animasi kertas yang sedang berjalan
+      !paperAnimationActive
     ) {
       isPaperTextureVisible = !isPaperTextureVisible;
       startPaperAnimation(isPaperTextureVisible);
@@ -888,77 +878,147 @@ function handleInteraction() {
         if (originalSteamPosition)
           steamObject.position.copy(originalSteamPosition);
         if (steamObject.material)
-          steamObject.material.opacity = originalSteamOpacity; // Reset opacity
+          steamObject.material.opacity = originalSteamOpacity;
         steamObject.visible = true;
-      } else {
-        steamObject.visible = false;
-      }
+      } else steamObject.visible = false;
       console.log("Steam toggled:", isSteamActive ? "Active" : "Inactive");
     } else if (interactiveObjectName === "Object_16") {
-      // <<<--- INTERAKSI DENGAN Object_16
       console.log("Attempting to toggle Sonic animation via Object_16.");
-      toggleSonicAnimation(); // Panggil fungsi untuk toggle animasi Sonic
+      toggleSonicAnimation();
+    } else if (interactiveObjectName === "Object_14" && !object14Triggered) {
+      console.log("Triggering dynamic fall for objects via Object_14.");
+      isDynamicFallActive = true;
+      object14Triggered = true;
+
+      dynamicFallObjectsData.forEach((objData) => {
+        // Reset timer dan set status waiting to fall
+        objData.delayTimer = 0;
+        objData.isFalling = false;
+        objData.hasLanded = false;
+        objData.velocity.set(0, 0, 0);
+        objData.angularVelocity.set(0, 0, 0);
+
+        // Hapus objek dari collidables agar tidak mengganggu player
+        const meshIndex = collidableMeshes.indexOf(objData.mesh);
+        if (meshIndex > -1) {
+          collidableMeshes.splice(meshIndex, 1);
+          collisionBoundingBoxes.delete(objData.mesh.name);
+        }
+      });
     }
+  }
+}
+
+function updateDynamicFall(deltaTime) {
+  if (!isDynamicFallActive) return;
+  let allObjectsLanded = true;
+
+  dynamicFallObjectsData.forEach((objData) => {
+    // Jika objek belum mulai jatuh, cek delay timer
+    if (!objData.isFalling && !objData.hasLanded) {
+      objData.delayTimer += deltaTime;
+      if (objData.delayTimer >= objData.fallDelay) {
+        // Mulai jatuh dengan kecepatan horizontal random
+        objData.isFalling = true;
+        objData.velocity.set(
+          objData.horizontalDirection.x * INITIAL_FALL_HORIZONTAL_DRIFT_MAX,
+          0,
+          objData.horizontalDirection.z * INITIAL_FALL_HORIZONTAL_DRIFT_MAX
+        );
+        console.log(
+          `Object ${
+            objData.mesh.name
+          } started falling after ${objData.fallDelay.toFixed(2)}s delay`
+        );
+      } else {
+        allObjectsLanded = false; // Masih ada objek yang menunggu
+      }
+    }
+
+    // Update objek yang sedang jatuh
+    if (objData.isFalling && !objData.hasLanded) {
+      allObjectsLanded = false;
+
+      // Apply gravity
+      objData.velocity.y -= OBJECT_LOCAL_GRAVITY_FALL * deltaTime;
+
+      // Update position
+      objData.mesh.position.addScaledVector(objData.velocity, deltaTime);
+
+      // Optional: Add slight air resistance to horizontal movement
+      objData.velocity.x *= 0.98;
+      objData.velocity.z *= 0.98;
+
+      // Check if hit ground threshold
+      if (objData.mesh.position.y <= MIN_Y_THRESHOLD_LOCAL) {
+        objData.mesh.position.y = MIN_Y_THRESHOLD_LOCAL;
+        objData.velocity.set(0, 0, 0);
+        objData.angularVelocity.set(0, 0, 0);
+        objData.isFalling = false;
+        objData.hasLanded = true;
+        console.log(`Object ${objData.mesh.name} has landed`);
+      }
+    }
+  });
+
+  if (allObjectsLanded && object14Triggered) {
+    isDynamicFallActive = false;
+    console.log(
+      "All dynamic fall objects have landed or passed the minimum Y threshold."
+    );
   }
 }
 
 function updatePlayerAndCamera(deltaTime) {
   if (controls.isLocked) {
     const camRef = controls.getObject();
-    let baseSpeed = 8.0; // Kecepatan dasar player
-    let currentSpeed = (keys.SHIFT_LEFT ? 1.5 : 1) * baseSpeed; // Sprint jika Shift ditekan
+    let baseSpeed = 8.0;
+    let currentSpeed = (keys.SHIFT_LEFT ? 1.5 : 1) * baseSpeed;
     if (isGhostMode) currentSpeed *= GHOST_MODE_SPEED_MULTIPLIER;
     const actualSpeed = currentSpeed * deltaTime;
 
-    camRef.getWorldDirection(_forward); // Arah pandang kamera
-    if (!isGhostMode) _forward.y = 0; // Abaikan komponen Y untuk gerakan di darat
+    camRef.getWorldDirection(_forward);
+    if (!isGhostMode) _forward.y = 0;
     _forward.normalize();
-
-    _right.crossVectors(camRef.up, _forward).normalize(); // Arah kanan relatif terhadap kamera
-
+    _right.crossVectors(camRef.up, _forward).normalize();
     _movementDirection.set(0, 0, 0);
     if (keys.W) _movementDirection.add(_forward);
     if (keys.S) _movementDirection.sub(_forward);
-    if (keys.A) _movementDirection.add(_right); // Bergerak ke kiri (negatif sumbu kanan kamera)
-    if (keys.D) _movementDirection.sub(_right); // Bergerak ke kanan (positif sumbu kanan kamera)
-
+    if (keys.A) _movementDirection.add(_right);
+    if (keys.D) _movementDirection.sub(_right);
     if (_movementDirection.lengthSq() > 0) _movementDirection.normalize();
 
     const dX = _movementDirection.x * actualSpeed;
-    const dYfromWASD = isGhostMode ? _movementDirection.y * actualSpeed : 0; // Hanya untuk ghost mode
+    const dYfromWASD = isGhostMode ? _movementDirection.y * actualSpeed : 0;
     const dZ = _movementDirection.z * actualSpeed;
 
     if (isGhostMode) {
-      player.velocity.y = 0; // Tidak ada gravitasi di ghost mode
+      player.velocity.y = 0;
       player.position.x += dX;
-      player.position.y += dYfromWASD; // Gerakan Y dari W/S jika ghost mode
+      player.position.y += dYfromWASD;
       player.position.z += dZ;
-      if (keys.SPACE) player.position.y += actualSpeed; // Naik
-      if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed; // Turun
+      if (keys.SPACE) player.position.y += actualSpeed;
+      if (keys.Q_GHOST_DOWN) player.position.y -= actualSpeed;
       player.isGrounded = false;
       camRef.position.copy(player.position);
     } else {
-      // --- Non-Ghost Mode (Physics) ---
-      if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime; // Terapkan gravitasi
-
+      if (!player.isGrounded) player.velocity.y -= GRAVITY * deltaTime;
       if (keys.SPACE && player.isGrounded && player.canJump) {
         player.velocity.y = JUMP_IMPULSE;
         player.isGrounded = false;
-        player.canJump = false; // Mencegah double jump instan
+        player.canJump = false;
       }
-      if (!keys.SPACE) player.canJump = true; // Boleh lompat lagi setelah tombol Space dilepas
+      if (!keys.SPACE) player.canJump = true;
 
-      // Ground Check Raycast
       const groundRayOrigin = player.position.clone();
-      groundRayOrigin.y += PLAYER_FEET_RADIUS * 0.5; // Mulai sedikit di atas dasar bounding box player
-      raycaster.set(groundRayOrigin, new THREE.Vector3(0, -1, 0));
+      groundRayOrigin.y += PLAYER_FEET_RADIUS * 0.5;
+      raycaster.set(groundRayOrigin, _upVector.clone().negate());
       raycaster.far = Math.max(
         PLAYER_FEET_RADIUS * 1.1,
         Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS
       );
       const groundHits = raycaster.intersectObjects(collidableMeshes, true);
       player.isGrounded = false;
-
       if (
         player.velocity.y <= 0 &&
         groundHits.length > 0 &&
@@ -968,13 +1028,12 @@ function updatePlayerAndCamera(deltaTime) {
         player.velocity.y = 0;
         player.isGrounded = true;
       }
-      player.position.y += player.velocity.y * deltaTime; // Terapkan gerakan vertikal
+      player.position.y += player.velocity.y * deltaTime;
 
-      // Head Collision (jika bergerak ke atas)
       if (player.velocity.y > 0) {
         const headOrigin = player.position.clone();
-        headOrigin.y += PLAYER_COLLISION_HEIGHT / 2 - 0.1; // Sedikit di bawah atas kepala
-        raycaster.set(headOrigin, new THREE.Vector3(0, 1, 0));
+        headOrigin.y += PLAYER_COLLISION_HEIGHT / 2 - 0.1;
+        raycaster.set(headOrigin, _upVector);
         raycaster.far = player.velocity.y * deltaTime + 0.2;
         const headHits = raycaster.intersectObjects(collidableMeshes, true);
         if (headHits.length > 0) {
@@ -983,20 +1042,17 @@ function updatePlayerAndCamera(deltaTime) {
         }
       }
 
-      // Horizontal Movement & Collision
       const tempPos = player.position.clone();
       tempPos.x += dX;
       tempPos.z += dZ;
-
       player.boundingBox.setFromCenterAndSize(
-        new THREE.Vector3(tempPos.x, player.position.y, tempPos.z), // Gunakan Y saat ini untuk BBox horizontal
+        new THREE.Vector3(tempPos.x, player.position.y, tempPos.z),
         new THREE.Vector3(
           playerRadiusBuffer * 2,
           PLAYER_COLLISION_HEIGHT,
           playerRadiusBuffer * 2
         )
       );
-
       let canMoveHorizontally = true;
       let steppedUp = false;
 
@@ -1009,28 +1065,24 @@ function updatePlayerAndCamera(deltaTime) {
             player.boundingBox.intersectsBox(meshBoundingBox)
           ) {
             let didStep = false;
-            // Cek step-up
             const headClearOrigin = player.position.clone();
             headClearOrigin.x +=
               _movementDirection.x * playerRadiusBuffer * 0.5;
             headClearOrigin.z +=
               _movementDirection.z * playerRadiusBuffer * 0.5;
-            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1; // Cek dari atas max step height
-
-            raycaster.set(headClearOrigin, _movementDirection); // Raycast ke arah gerakan dari atas
+            headClearOrigin.y += MAX_STEP_HEIGHT + 0.1;
+            raycaster.set(headClearOrigin, _movementDirection);
             raycaster.far = playerRadiusBuffer;
 
             if (raycaster.intersectObject(mesh, true).length === 0) {
-              // Jika tidak ada halangan di atas kepala
-              const stepSurfaceOrigin = new THREE.Vector3(
+              const stepSurfOrigin = new THREE.Vector3(
                 tempPos.x,
                 player.position.y + MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS,
                 tempPos.z
               );
-              raycaster.set(stepSurfaceOrigin, new THREE.Vector3(0, -1, 0)); // Raycast ke bawah dari atas step
+              raycaster.set(stepSurfOrigin, _upVector.clone().negate());
               raycaster.far = MAX_STEP_HEIGHT + PLAYER_FEET_RADIUS * 1.5;
               const stepHits = raycaster.intersectObject(mesh, true);
-
               if (stepHits.length > 0) {
                 const yDiff =
                   stepHits[0].point.y +
@@ -1057,12 +1109,10 @@ function updatePlayerAndCamera(deltaTime) {
           }
         }
       }
-
       if (!steppedUp && canMoveHorizontally) {
         player.position.x = tempPos.x;
         player.position.z = tempPos.z;
       }
-
       camRef.position.set(
         player.position.x,
         player.position.y + PLAYER_EYE_HEIGHT - PLAYER_COLLISION_HEIGHT / 2,
@@ -1070,17 +1120,14 @@ function updatePlayerAndCamera(deltaTime) {
       );
     }
   } else {
-    // Jika kontrol tidak terkunci (misalnya, menu pause)
     player.velocity.x = 0;
     player.velocity.z = 0;
-    // Tetap terapkan gravitasi jika tidak ghost mode dan tidak di tanah
     if (!isGhostMode && !player.isGrounded) {
       player.velocity.y -= GRAVITY * deltaTime;
       player.position.y += player.velocity.y * deltaTime;
-      // Ground check sederhana
       const groundRayOriginPaused = player.position.clone();
       groundRayOriginPaused.y += PLAYER_FEET_RADIUS * 0.5;
-      raycaster.set(groundRayOriginPaused, new THREE.Vector3(0, -1, 0));
+      raycaster.set(groundRayOriginPaused, _upVector.clone().negate());
       raycaster.far = Math.max(
         PLAYER_FEET_RADIUS * 1.1,
         Math.abs(player.velocity.y * deltaTime) + PLAYER_FEET_RADIUS
@@ -1099,7 +1146,6 @@ function updatePlayerAndCamera(deltaTime) {
         player.velocity.y = 0;
         player.isGrounded = true;
       }
-      // Update posisi kamera agar tetap sinkron
       controls
         .getObject()
         .position.set(
@@ -1110,7 +1156,6 @@ function updatePlayerAndCamera(deltaTime) {
     }
   }
 
-  // Update TV static
   if (
     isTVOn &&
     staticTexture &&
@@ -1122,8 +1167,6 @@ function updatePlayerAndCamera(deltaTime) {
     staticTexture.offset.y =
       (((staticTexture.offset.y + (Math.random() * 0.1 - 0.05)) % 1) + 1) % 1;
   }
-
-  // Update steam animation
   if (
     isSteamActive &&
     steamObject &&
@@ -1155,9 +1198,9 @@ function animate() {
   const deltaTime = Math.min(0.05, clock.getDelta());
 
   updatePlayerAndCamera(deltaTime);
+  updateDynamicFall(deltaTime);
 
   if (sonicMixer) sonicMixer.update(deltaTime);
-
   if (sonicModel && sonicBasePosition) {
     sonicModel.position.copy(sonicBasePosition).add(sonicPositionOffset);
   }
